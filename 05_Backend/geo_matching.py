@@ -226,12 +226,22 @@ CITY_BOUNDS = [
 def get_city_from_coords(lat: float, lon: float) -> str:
     """
     Determines city jurisdiction from coordinates.
-    First checks offline polygon boundaries (instant, zero cost, reliable).
-    Falls back to Google Geocoding API if key is available.
+    1. First checks offline polygon boundaries (instant, zero cost, reliable).
+    2. Falls back to reverse geocoding via OpenStreetMap Nominatim.
+    3. Falls back to Google Geocoding API if key is available.
     """
     for city in CITY_BOUNDS:
         if city["lat_min"] <= lat <= city["lat_max"] and city["lon_min"] <= lon <= city["lon_max"]:
             return city["name"]
+
+    # Try reverse geocode to detect city/district
+    try:
+        geo = reverse_geocode(lat, lon)
+        city_cand = geo.get("city")
+        if city_cand and city_cand != "Unknown":
+            return city_cand
+    except Exception:
+        pass
 
     if GEOCODING_API_KEY:
         try:
@@ -249,26 +259,230 @@ def get_city_from_coords(lat: float, lon: float) -> str:
         except Exception:
             pass
 
-    return "Unknown"
+    return "Mangaluru"
+
+
+def reverse_geocode(lat: float, lon: float) -> Dict[str, Any]:
+    """
+    Reverse geocodes (lat, lon) to human-readable road name, suburb, city, and state
+    using OpenStreetMap Nominatim with offline fallback.
+    """
+    # 1. Quick city detection via bounds
+    offline_city = "Mangaluru"
+    for c in CITY_BOUNDS:
+        if c["lat_min"] <= lat <= c["lat_max"] and c["lon_min"] <= lon <= c["lon_max"]:
+            offline_city = c["name"]
+            break
+
+    result = {
+        "road": f"Road at {lat:.5f}, {lon:.5f}",
+        "city": offline_city,
+        "state": "Karnataka",
+        "display_name": f"{lat:.5f}, {lon:.5f} ({offline_city})"
+    }
+
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&zoom=18&addressdetails=1"
+        headers = {"User-Agent": "RideVision-PBL-RoadSafetyApp/1.0 (contact: student@sjec.ac.in)"}
+        resp = requests.get(url, headers=headers, timeout=3.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            addr = data.get("address", {})
+
+            # Standardize city name
+            raw_city = (
+                addr.get("city") or
+                addr.get("town") or
+                addr.get("municipality") or
+                addr.get("district") or
+                addr.get("county") or
+                offline_city
+            )
+
+            # Clean and normalize common Karnataka city names
+            cleaned_city = raw_city
+            lower_city = raw_city.lower()
+            if "mangal" in lower_city:
+                cleaned_city = "Mangaluru"
+            elif "bengal" in lower_city or "bangal" in lower_city:
+                cleaned_city = "Bengaluru"
+            elif "udupi" in lower_city or "manipal" in lower_city:
+                cleaned_city = "Udupi"
+            elif "mys" in lower_city:
+                cleaned_city = "Mysuru"
+
+            road_name = (
+                addr.get("road") or
+                addr.get("highway") or
+                addr.get("suburb") or
+                addr.get("neighbourhood") or
+                data.get("name") or
+                f"Road near {cleaned_city}"
+            )
+
+            result["road"] = road_name
+            result["city"] = cleaned_city
+            result["state"] = addr.get("state", "Karnataka")
+            result["display_name"] = data.get("display_name", f"{road_name}, {cleaned_city}")
+    except Exception:
+        pass
+
+    return result
+
+
+def geocode_address(query: str) -> Optional[Dict[str, Any]]:
+    """
+    Forward geocodes an address or landmark query (e.g. 'SJEC Vamanjoor', 'Hampankatta Mangaluru')
+    to (lat, lon, display_name, city).
+    """
+    if not query or len(query.strip()) < 2:
+        return None
+
+    try:
+        url = f"https://nominatim.openstreetmap.org/search?q={quote(query.strip())}&format=json&limit=1&addressdetails=1"
+        headers = {"User-Agent": "RideVision-PBL-RoadSafetyApp/1.0 (contact: student@sjec.ac.in)"}
+        resp = requests.get(url, headers=headers, timeout=4.0)
+        if resp.status_code == 200:
+            results = resp.json()
+            if results and len(results) > 0:
+                top = results[0]
+                lat = float(top["lat"])
+                lon = float(top["lon"])
+                addr = top.get("address", {})
+                city = get_city_from_coords(lat, lon)
+                road = addr.get("road") or addr.get("suburb") or top.get("display_name", "").split(",")[0]
+                return {
+                    "lat": lat,
+                    "lon": lon,
+                    "city": city,
+                    "road": road,
+                    "display_name": top.get("display_name")
+                }
+    except Exception:
+        pass
+
+    return None
+
+
+def detect_ip_location() -> Dict[str, Any]:
+    """
+    Detects user's real-time geographical coordinates based on public IP address.
+    Zero-config, fast, no browser permission prompt required.
+    """
+    try:
+        resp = requests.get("https://ipapi.co/json/", headers={"User-Agent": "RideVision/1.0"}, timeout=3.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            lat = float(data.get("latitude", 12.9152))
+            lon = float(data.get("longitude", 74.8988))
+            city = data.get("city", "Mangaluru")
+            region = data.get("region", "Karnataka")
+            return {
+                "lat": lat,
+                "lon": lon,
+                "city": city,
+                "region": region,
+                "isp": data.get("org", "Local ISP"),
+                "source": "ip_geolocation"
+            }
+    except Exception:
+        pass
+
+    # Default to Mangaluru (SJEC Vamanjoor)
+    return {
+        "lat": 12.9152,
+        "lon": 74.8988,
+        "city": "Mangaluru",
+        "region": "Karnataka",
+        "isp": "Default Network",
+        "source": "default"
+    }
+
+
+def get_route_osrm(
+    start_lat: float, start_lon: float,
+    end_lat: float, end_lon: float
+) -> Dict[str, Any]:
+    """
+    Computes real-world driving route between origin and destination using the OSRM Routing Engine.
+    Returns:
+    - coordinates: List of [lat, lon] waypoints along the actual road network
+    - distance_km: Real road distance in kilometers
+    - duration_min: Estimated drive duration in minutes
+    - steps: Major turn-by-turn road steps
+    """
+    try:
+        url = (
+            f"http://router.project-osrm.org/route/v1/driving/"
+            f"{start_lon},{start_lat};{end_lon},{end_lat}"
+            f"?overview=full&geometries=geojson&steps=true"
+        )
+        resp = requests.get(url, timeout=5.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("code") == "Ok" and data.get("routes"):
+                route = data["routes"][0]
+                # GeoJSON coordinates are [lon, lat] -> convert to [lat, lon]
+                coords = [[pt[1], pt[0]] for pt in route["geometry"]["coordinates"]]
+                dist_km = round(route["distance"] / 1000.0, 2)
+                dur_min = round(route["duration"] / 60.0, 1)
+
+                steps = []
+                for leg in route.get("legs", []):
+                    for step in leg.get("steps", []):
+                        name = step.get("name") or "Connecting Road"
+                        dist = round(step.get("distance", 0))
+                        steps.append({"name": name, "distance_m": dist})
+
+                return {
+                    "status": "success",
+                    "coordinates": coords,
+                    "distance_km": dist_km,
+                    "duration_min": dur_min,
+                    "steps": steps,
+                    "source": "osrm_live"
+                }
+    except Exception:
+        pass
+
+    # Fallback: compute 25 linearly interpolated points if OSRM is unreachable
+    coords = []
+    num_pts = 25
+    for i in range(num_pts):
+        f = i / (num_pts - 1)
+        coords.append([
+            start_lat + f * (end_lat - start_lat),
+            start_lon + f * (end_lon - start_lon)
+        ])
+    straight_dist_km = round(haversine_distance_m(start_lat, start_lon, end_lat, end_lon) / 1000.0, 2)
+
+    return {
+        "status": "fallback",
+        "coordinates": coords,
+        "distance_km": straight_dist_km,
+        "duration_min": round(straight_dist_km / 35.0 * 60, 1),
+        "steps": [{"name": "Direct Commute Corridor", "distance_m": int(straight_dist_km * 1000)}],
+        "source": "interpolated_corridor"
+    }
 
 
 def build_complaint_text(complaint: Dict[str, Any]) -> str:
     """Generates structured, professional complaint message text for WhatsApp or Email."""
     lat = complaint.get("lat") or complaint.get("latitude", 0.0)
     lon = complaint.get("lon") or complaint.get("longitude", 0.0)
-    severity = complaint.get("severity", "Moderate").upper()
+    severity = str(complaint.get("severity", "Moderate")).upper()
     address = complaint.get("address", f"Lat: {lat:.5f}, Lon: {lon:.5f}")
     time_str = complaint.get("reported_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
     note = complaint.get("note", "Reported by commuter via RideVision AI")
 
     return (
-        f"🚨 *POTHOLE HAZARD REPORT — RideVision*\n\n"
+        f"🚨 *ROAD POTHOLE HAZARD REPORT — RideVision*\n\n"
         f"📍 *Location:* {address}\n"
-        f"🌐 *Google Maps:* https://maps.google.com/?q={lat},{lon}\n"
-        f"⚠️ *Severity:* {severity}\n"
+        f"🌐 *Google Maps Link:* https://maps.google.com/?q={lat},{lon}\n"
+        f"⚠️ *Severity Assessment:* {severity}\n"
         f"🕒 *Reported At:* {time_str}\n"
-        f"📝 *Note:* {note}\n\n"
-        f"_This report was verified and auto-routed via the RideVision Computer Vision Commuter Safety System._"
+        f"📝 *Commuter Note:* {note}\n\n"
+        f"_This report was verified and auto-routed via the RideVision Computer Vision Road Safety System._"
     )
 
 
@@ -278,17 +492,43 @@ def route_complaint(complaint: Dict[str, Any], city_config: Dict[str, Any]) -> D
     - WhatsApp: direct clickable link (wa.me) with prefilled complaint text.
     - Helpline: phone number and instructions.
     - Email: mailto link with subject and body.
+    Includes smart fallback to Municipal Corporation / PWD grievance desk.
     """
-    channel = city_config.get("channel_type", "none")
+    city_name = city_config.get("city_name") or complaint.get("city") or "Mangaluru"
+    channel = city_config.get("channel_type", "whatsapp")
     contact = city_config.get("contact_value", "")
-    authority = city_config.get("authority_name", "Municipal Authority")
+    authority = city_config.get("authority_name") or f"{city_name} Municipal Corporation / PWD Cell"
+
+    # Default contact fallback if empty
+    if not contact:
+        if "mangal" in city_name.lower():
+            channel = "whatsapp"
+            contact = "919449007722"
+            authority = "Mangaluru City Corporation (MCC) Grievance Desk"
+        elif "bengal" in city_name.lower() or "bangal" in city_name.lower():
+            channel = "helpline"
+            contact = "080-22660000"
+            authority = "BBMP Pothole Control Room (24x7)"
+        elif "udupi" in city_name.lower():
+            channel = "helpline"
+            contact = "0820-2520306"
+            authority = "Udupi City Municipal Council (CMC)"
+        elif "mys" in city_name.lower():
+            channel = "helpline"
+            contact = "0821-2440890"
+            authority = "Mysuru City Corporation (MCC)"
+        else:
+            channel = "whatsapp"
+            contact = "919449007722"
+            authority = f"{city_name} Road Safety & PWD Grievance Desk"
+
     message = build_complaint_text(complaint)
 
     result = {
-        "city": city_config.get("city_name", "Unknown"),
+        "city": city_name,
         "authority": authority,
         "channel": channel,
-        "instructions": city_config.get("instructions", ""),
+        "instructions": city_config.get("instructions") or f"Direct complaint channel for {city_name}.",
         "action": "store_only",
         "link": None,
         "contact": contact,
@@ -302,7 +542,7 @@ def route_complaint(complaint: Dict[str, Any], city_config: Dict[str, Any]) -> D
 
     elif channel == "email":
         result["action"] = "manual_forward"
-        subject = quote(f"Road Pothole Hazard Report - {city_config.get('city_name', '')}")
+        subject = quote(f"Road Pothole Hazard Report - {city_name}")
         body = quote(message)
         result["link"] = f"mailto:{contact}?subject={subject}&body={body}"
 

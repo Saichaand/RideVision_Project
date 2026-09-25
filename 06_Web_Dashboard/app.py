@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import json
+import glob
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -20,8 +21,18 @@ import numpy as np
 import cv2
 from PIL import Image
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import pydeck as pdk
+
+DATASET_IMAGES_DIR = r"C:\Users\saich\Desktop\datasets\train\images"
+
+def get_dataset_samples(limit=25):
+    """Returns a dict of {display_name: full_path} for real dataset images."""
+    if not os.path.isdir(DATASET_IMAGES_DIR):
+        return {}
+    files = sorted(glob.glob(os.path.join(DATASET_IMAGES_DIR, "*.png")) + glob.glob(os.path.join(DATASET_IMAGES_DIR, "*.jpg")))[:limit]
+    return {f"📁 Dataset: {os.path.basename(f)}": f for f in files}
 
 # Add 05_Backend to Python search path
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "05_Backend"))
@@ -51,6 +62,10 @@ from geo_matching import (
     match_trip_passed_by,
     is_confirmation_eligible,
     get_city_from_coords,
+    reverse_geocode,
+    geocode_address,
+    detect_ip_location,
+    get_route_osrm,
     route_complaint
 )
 from detector import detector
