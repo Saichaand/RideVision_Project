@@ -348,62 +348,92 @@ if not is_dev:
     # --------------------------------------------------------------------------
     with u_tab_hud:
         st.markdown("### 🛡️ Live Driver Head-Up Display (HUD)")
-        st.write("Real-time safety simulation: As you drive, RideVision continuously scans for confirmed potholes within **250 meters ahead** in your travel direction and sounds an early hazard alert.")
+        st.write("Real-time safety navigation: As you drive along your commute, RideVision continuously scans for confirmed potholes within **250 meters ahead** in your travel lane and triggers early directional alerts.")
 
-        col_sim_ctrl, col_hud_display = st.columns([1, 1.4])
+        col_sim_ctrl, col_hud_display = st.columns([1.1, 1.4])
 
         with col_sim_ctrl:
-            st.markdown("#### 🛣️ Commute Route & Position")
-            user_routes = {
-                "Mangaluru — SJEC Vamanjoor to Kankanady": {
-                    "pothole_lat": 12.8715, "pothole_lon": 74.8564, "name": "Kankanady Bypass Road near Father Muller",
-                    "severity": "severe", "heading": 245.0,
-                    "steps": [
-                        {"desc": "1. Bikarnakatte Stretch (450m out - Normal)", "lat": 12.8745, "lon": 74.8595, "dist": 450},
-                        {"desc": "2. Approaching Pumpwell cut (290m out - Normal)", "lat": 12.8735, "lon": 74.8584, "dist": 290},
-                        {"desc": "3. Entering Alert Zone (210m ahead - ⚠️ WARNING)", "lat": 12.8729, "lon": 74.8578, "dist": 210},
-                        {"desc": "4. 140m Ahead (⚠️ WARNING - Clear line of sight)", "lat": 12.8724, "lon": 74.8573, "dist": 140},
-                        {"desc": "5. 60m Ahead (🚨 IMMINENT DANGER - Slow down!)", "lat": 12.8719, "lon": 74.8568, "dist": 60},
-                        {"desc": "6. Passing directly over hazard (15m)", "lat": 12.8716, "lon": 74.8565, "dist": 15},
-                    ]
+            st.markdown("#### 🛣️ Commute Route & Navigation")
+            route_mode = st.radio("Route Selection:", ["Popular City Commutes", "Custom Origin & Destination"], horizontal=True)
+
+            preset_routes = {
+                "Mangaluru — SJEC Vamanjoor to Kankanady (NH 73)": {
+                    "start": (12.9152, 74.8988, "SJEC Vamanjoor Gate"),
+                    "end": (12.8715, 74.8564, "Kankanady Junction"),
+                    "city": "Mangaluru"
                 },
                 "Mangaluru — Kadri Mallikatte to Hampankatta": {
-                    "pothole_lat": 12.8798, "pothole_lon": 74.8532, "name": "Kadri Temple Road near Mallikatte Junction",
-                    "severity": "moderate", "heading": 230.0,
-                    "steps": [
-                        {"desc": "1. Kadri Park Stretch (350m out)", "lat": 12.8820, "lon": 74.8555, "dist": 350},
-                        {"desc": "2. Alert Radius (240m ahead - ⚠️ WARNING)", "lat": 12.8813, "lon": 74.8548, "dist": 240},
-                        {"desc": "3. 120m ahead (⚠️ WARNING)", "lat": 12.8805, "lon": 74.8540, "dist": 120},
-                        {"desc": "4. 40m ahead (🚨 IMMINENT HAZARD)", "lat": 12.8800, "lon": 74.8535, "dist": 40},
-                    ]
+                    "start": (12.8798, 74.8532, "Kadri Mallikatte"),
+                    "end": (12.8646, 74.8425, "Hampankatta City Center"),
+                    "city": "Mangaluru"
                 },
                 "Bengaluru — Indiranagar 100ft Road to Domlur": {
-                    "pothole_lat": 12.9719, "pothole_lon": 77.6412, "name": "100 Feet Road near 12th Main Indiranagar",
-                    "severity": "severe", "heading": 180.0,
-                    "steps": [
-                        {"desc": "1. CMH Road Flyover (400m out)", "lat": 12.9755, "lon": 77.6412, "dist": 400},
-                        {"desc": "2. 230m ahead (⚠️ WARNING - Alert zone)", "lat": 12.9739, "lon": 77.6412, "dist": 230},
-                        {"desc": "3. 110m ahead (⚠️ WARNING - Heavy traffic cavity)", "lat": 12.9729, "lon": 77.6412, "dist": 110},
-                        {"desc": "4. 30m ahead (🚨 IMMINENT HAZARD)", "lat": 12.9722, "lon": 77.6412, "dist": 30},
-                    ]
+                    "start": (12.9719, 77.6412, "Indiranagar 100ft Road"),
+                    "end": (12.9610, 77.6410, "Domlur Flyover"),
+                    "city": "Bengaluru"
+                },
+                "Udupi — Manipal Tiger Circle to City Bus Stand": {
+                    "start": (13.3525, 74.7865, "Manipal Tiger Circle"),
+                    "end": (13.3408, 74.7421, "Udupi Bus Stand"),
+                    "city": "Udupi"
                 }
             }
 
-            u_route_name = st.selectbox("Select Route:", list(user_routes.keys()))
-            u_route = user_routes[u_route_name]
+            if route_mode == "Popular City Commutes":
+                sel_route_label = st.selectbox("Select Commute Corridor:", list(preset_routes.keys()))
+                route_meta = preset_routes[sel_route_label]
+                start_lat, start_lon, start_name = route_meta["start"]
+                end_lat, end_lon, end_name = route_meta["end"]
+            else:
+                c_start_in, c_end_in = st.columns(2)
+                with c_start_in:
+                    custom_start = st.text_input("Start Location:", value="SJEC Vamanjoor, Mangaluru")
+                with c_end_in:
+                    custom_dest = st.text_input("Destination:", value="Kankanady, Mangaluru")
 
-            step_names = [s["desc"] for s in u_route["steps"]]
-            u_step_idx = st.select_slider(
-                "Simulate Driving Along Route:",
-                options=range(len(step_names)),
-                format_func=lambda i: step_names[i]
-            )
-            curr_step = u_route["steps"][u_step_idx]
+                if st.button("📍 Geocode & Trace Route", use_container_width=True):
+                    g_start = geocode_address(custom_start)
+                    g_dest = geocode_address(custom_dest)
+                    if g_start and g_dest:
+                        st.session_state["custom_route_coords"] = (
+                            g_start["lat"], g_start["lon"], g_start["road"],
+                            g_dest["lat"], g_dest["lon"], g_dest["road"]
+                        )
+                        st.success(f"Route traced: {g_start['road']} ➔ {g_dest['road']}")
+                    else:
+                        st.warning("Could not geocode one of the addresses. Using default coordinates.")
 
-            st.caption("💡 Drag the slider to advance your vehicle along the road and observe how the HUD switches from Safe to Warning.")
+                if "custom_route_coords" in st.session_state:
+                    start_lat, start_lon, start_name, end_lat, end_lon, end_name = st.session_state["custom_route_coords"]
+                else:
+                    start_lat, start_lon, start_name = (12.9152, 74.8988, "SJEC Vamanjoor Gate")
+                    end_lat, end_lon, end_name = (12.8715, 74.8564, "Kankanady Junction")
 
-        with col_hud_display:
-            # Check warning ahead
+            # Route Calculation (cached in session state per endpoints)
+            route_key = f"osrm_{start_lat:.4f}_{start_lon:.4f}_{end_lat:.4f}_{end_lon:.4f}"
+            if route_key not in st.session_state:
+                with st.spinner("Computing real driving route via OSRM..."):
+                    st.session_state[route_key] = get_route_osrm(start_lat, start_lon, end_lat, end_lon)
+
+            route_data = st.session_state[route_key]
+            route_coords = route_data["coordinates"]
+            total_pts = len(route_coords)
+
+            st.markdown(f"""
+            <div style="background: rgba(30, 41, 59, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.88rem;">
+                    <span>🚩 <b>Start:</b> {start_name}</span>
+                    <span>🏁 <b>Dest:</b> {end_name}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.88rem; color: #38BDF8; margin-top: 6px;">
+                    <span>🛣️ Distance: <b>{route_data['distance_km']} km</b></span>
+                    <span>⏱️ Est. Drive Time: <b>{route_data['duration_min']} mins</b></span>
+                    <span>📍 Waypoints: <b>{total_pts}</b></span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Check all active potholes in DB
             all_active = get_all_potholes(status="active")
             p_objects = [
                 Pothole(
@@ -414,10 +444,46 @@ if not is_dev:
                 for p in all_active
             ]
 
+            # Find potholes along this commute path (within 300m corridor)
+            route_potholes = []
+            for p in p_objects:
+                for wpt in route_coords[::max(1, total_pts // 50)]:
+                    if haversine_distance_m(wpt[0], wpt[1], p.lat, p.lon) <= 300:
+                        route_potholes.append(p)
+                        break
+
+            if route_potholes:
+                st.warning(f"⚠️ **Hazard Notice:** Found {len(route_potholes)} active pothole(s) along this commute road.")
+            else:
+                st.success("✅ **Smooth Corridor:** No severe road cavities currently recorded along this direct path.")
+
+            # Drive simulation slider
+            sim_progress = st.slider(
+                "Simulate Driving Along Route (%):",
+                min_value=0, max_value=100, value=25, step=1,
+                help="Slide to simulate moving vehicle position along the real road network"
+            )
+
+            # Current vehicle index and coordinates
+            curr_idx = int((sim_progress / 100.0) * (total_pts - 1))
+            curr_pt = route_coords[curr_idx]
+            curr_lat, curr_lon = curr_pt[0], curr_pt[1]
+
+            # Compute dynamic compass heading towards next point
+            if curr_idx < total_pts - 1:
+                next_pt = route_coords[curr_idx + 1]
+                calc_heading = bearing_deg(curr_lat, curr_lon, next_pt[0], next_pt[1])
+            elif curr_idx > 0:
+                prev_pt = route_coords[curr_idx - 1]
+                calc_heading = bearing_deg(prev_pt[0], prev_pt[1], curr_lat, curr_lon)
+            else:
+                calc_heading = 180.0
+
+        with col_hud_display:
             warning = check_warning_ahead(
-                current_lat=curr_step["lat"],
-                current_lon=curr_step["lon"],
-                heading_deg=float(u_route["heading"]),
+                current_lat=curr_lat,
+                current_lon=curr_lon,
+                heading_deg=calc_heading,
                 all_potholes=p_objects,
                 alert_radius_m=250.0,
                 heading_tolerance_deg=45.0,
@@ -427,11 +493,15 @@ if not is_dev:
             # Telemetry Metrics
             m_col1, m_col2, m_col3 = st.columns(3)
             with m_col1:
-                st.markdown(f'<div class="glass-card"><div class="metric-label">Vehicle Speed</div><div class="metric-value">45 <span style="font-size:0.9rem;color:#94A3B8;">km/h</span></div></div>', unsafe_allow_html=True)
+                sim_speed = 45 if sim_progress < 95 else 15
+                st.markdown(f'<div class="glass-card"><div class="metric-label">Vehicle Speed</div><div class="metric-value">{sim_speed} <span style="font-size:0.9rem;color:#94A3B8;">km/h</span></div></div>', unsafe_allow_html=True)
             with m_col2:
-                st.markdown(f'<div class="glass-card"><div class="metric-label">Distance to Hazard</div><div class="metric-value">{curr_step["dist"]} <span style="font-size:0.9rem;color:#94A3B8;">m</span></div></div>', unsafe_allow_html=True)
+                dist_display = f"{warning['distance_m']} m" if warning else "Clear"
+                st.markdown(f'<div class="glass-card"><div class="metric-label">Hazard Distance</div><div class="metric-value">{dist_display}</div></div>', unsafe_allow_html=True)
             with m_col3:
-                st.markdown(f'<div class="glass-card"><div class="metric-label">Compass Heading</div><div class="metric-value">{int(u_route["heading"])}° <span style="font-size:0.9rem;color:#94A3B8;">SW</span></div></div>', unsafe_allow_html=True)
+                cardinals = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+                cardinal = cardinals[int(((calc_heading + 22.5) % 360) / 45)]
+                st.markdown(f'<div class="glass-card"><div class="metric-label">Compass Heading</div><div class="metric-value">{int(calc_heading)}° <span style="font-size:0.9rem;color:#94A3B8;">{cardinal}</span></div></div>', unsafe_allow_html=True)
 
             if warning:
                 is_imminent = warning["distance_m"] <= 80
@@ -443,16 +513,16 @@ if not is_dev:
                     <div class="hud-title-danger">
                         {badge_text}
                     </div>
-                    <div style="font-size: 1.3rem; font-weight: 700; color: #FFFFFF; margin-top: 6px;">
+                    <div style="font-size: 1.25rem; font-weight: 700; color: #FFFFFF; margin-top: 6px;">
                         {warning['severity'].upper()} POTHOLE DETECTED {warning['distance_m']} METERS AHEAD
                     </div>
                     <div style="color: #FCA5A5; font-size: 0.95rem; margin-top: 8px; line-height: 1.5;">
                         📍 <b>Location:</b> {warning['address']}<br>
-                        📐 <b>Alignment:</b> Direct line of sight ({warning['angular_deviation_deg']}° off heading)<br>
-                        👥 <b>Community Confirmations:</b> {warning['confirmation_count']} commuter votes
+                        📐 <b>Alignment:</b> Direct forward corridor ({warning['angular_deviation_deg']}° off heading)<br>
+                        👥 <b>Community Confirmations:</b> {warning['confirmation_count']} commuter vote(s)
                     </div>
                     <div style="margin-top: 12px; padding: 8px 14px; background: rgba(0, 0, 0, 0.35); border-radius: 8px; border-left: 4px solid #EF4444; font-weight: 600; color: #FECACA;">
-                        🛡️ <b>Driver Advice:</b> {advice}
+                        🛡️ <b>Driver Action:</b> {advice}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -464,29 +534,54 @@ if not is_dev:
                     </div>
                     <div style="font-size: 1.05rem; color: #D1FAE5; margin-top: 6px;">
                         No severe road hazards detected within your 250m forward driving corridor.<br>
-                        (Nearest known spot is {curr_step['dist']}m away, outside alert cone).
+                        Vehicle progressing smoothly at {sim_progress}% of commute.
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Mini Top-Down Map
-            hud_df = pd.DataFrame([
-                {"lat": curr_step["lat"], "lon": curr_step["lon"], "name": "Your Vehicle", "color": [0, 180, 255]},
-                {"lat": u_route["pothole_lat"], "lon": u_route["pothole_lon"], "name": "Pothole Hazard", "color": [239, 68, 68]}
-            ])
+            # PyDeck 3D Map with Route Path + Vehicle Marker + Potholes
+            path_df = pd.DataFrame([{
+                "path": [[pt[1], pt[0]] for pt in route_coords],
+                "color": [14, 165, 233, 200]
+            }])
+
+            # Markers: Vehicle + Potholes
+            marker_list = [
+                {"lat": curr_lat, "lon": curr_lon, "name": "Your Vehicle", "color": [0, 210, 255, 255], "radius": 40}
+            ]
+            for p in p_objects:
+                p_color = [239, 68, 68, 230] if p.severity == "severe" else [245, 158, 11, 230]
+                marker_list.append({
+                    "lat": p.lat, "lon": p.lon,
+                    "name": f"{p.severity.upper()} Pothole: {p.address or 'Hazard'}",
+                    "color": p_color, "radius": 25
+                })
+
+            map_df = pd.DataFrame(marker_list)
+
             st.pydeck_chart(pdk.Deck(
                 map_style="road",
-                initial_view_state=pdk.ViewState(latitude=curr_step["lat"], longitude=curr_step["lon"], zoom=15, pitch=30),
+                initial_view_state=pdk.ViewState(latitude=curr_lat, longitude=curr_lon, zoom=14, pitch=35),
                 layers=[
                     pdk.Layer(
+                        "PathLayer",
+                        path_df,
+                        get_path="path",
+                        get_color="color",
+                        width_min_pixels=4,
+                        pickable=False
+                    ),
+                    pdk.Layer(
                         "ScatterplotLayer",
-                        hud_df,
+                        map_df,
                         get_position="[lon, lat]",
                         get_color="color",
-                        get_radius=25,
-                        pickable=True
+                        get_radius="radius",
+                        pickable=True,
+                        auto_highlight=True
                     )
-                ]
+                ],
+                tooltip={"html": "<b>{name}</b>", "style": {"backgroundColor": "#0F172A", "color": "#FFFFFF", "padding": "6px", "borderRadius": "6px"}}
             ))
 
     # --------------------------------------------------------------------------
@@ -494,7 +589,30 @@ if not is_dev:
     # --------------------------------------------------------------------------
     with u_tab_report:
         st.markdown("### 📸 Quick Road Hazard Report")
-        st.write("Snap a photo of the road damage. Our on-device Computer Vision rates the severity instantly and generates an official pre-filled complaint for municipal authorities.")
+        st.write("Snap or select a road photo. Our on-device Computer Vision rates damage severity, detects your exact geographical location & road jurisdiction, and generates an official complaint for municipal grievance desks.")
+
+        # HTML5 Device Geolocation receiver
+        if "user_gps" in st.query_params:
+            try:
+                g_lat, g_lon = map(float, st.query_params["user_gps"].split(","))
+                st.session_state["report_lat"] = g_lat
+                st.session_state["report_lon"] = g_lon
+                rev = reverse_geocode(g_lat, g_lon)
+                st.session_state["report_landmark"] = rev["road"]
+                st.session_state["report_city"] = rev["city"]
+                del st.query_params["user_gps"]
+                st.rerun()
+            except Exception:
+                pass
+
+        if "report_lat" not in st.session_state:
+            st.session_state["report_lat"] = 12.9152
+        if "report_lon" not in st.session_state:
+            st.session_state["report_lon"] = 74.8988
+        if "report_landmark" not in st.session_state:
+            st.session_state["report_landmark"] = "NH 73 near SJEC, Vamanjoor"
+        if "report_city" not in st.session_state:
+            st.session_state["report_city"] = "Mangaluru"
 
         samples_dir = os.path.join(os.path.dirname(__file__), "samples")
         
@@ -502,16 +620,21 @@ if not is_dev:
 
         with rep_col1:
             st.markdown("#### 1. Select or Upload Road Photo")
-            img_mode = st.radio("Image Source:", ["Use Test Road Sample", "Upload My Photo"], horizontal=True)
+            img_mode = st.radio("Image Source:", ["Use Benchmark / Dataset Sample", "Upload My Photo"], horizontal=True)
 
             user_image = None
-            if img_mode == "Use Test Road Sample":
+            if img_mode == "Use Benchmark / Dataset Sample":
+                # Combine standard samples with real dataset images
                 sample_picks = {
                     "🔴 Severe Pothole (NH 73 Mangaluru)": os.path.join(samples_dir, "sample_severe_pothole.jpg"),
                     "🟠 Moderate Cavity (City Asphalt)": os.path.join(samples_dir, "sample_moderate_pothole.jpg"),
                     "🟢 Clean Resurfaced Road": os.path.join(samples_dir, "sample_clean_road.jpg")
                 }
-                pick_label = st.selectbox("Pick a Sample:", list(sample_picks.keys()))
+                # Add real dataset images if available
+                dataset_images = get_dataset_samples(limit=25)
+                sample_picks.update(dataset_images)
+
+                pick_label = st.selectbox("Pick a Road Frame:", list(sample_picks.keys()))
                 path = sample_picks[pick_label]
                 if os.path.exists(path):
                     user_image = Image.open(path)
@@ -521,10 +644,10 @@ if not is_dev:
                     user_image = Image.open(up_file)
 
             if user_image:
-                st.image(user_image, caption="Uploaded Road Frame", use_container_width=True)
+                st.image(user_image, caption="Road Frame Input", use_container_width=True)
 
         with rep_col2:
-            st.markdown("#### 2. AI Severity & Civic Dispatch")
+            st.markdown("#### 2. AI Severity & Computer Vision")
             if user_image:
                 with st.spinner("Analyzing road frame with YOLOv8..."):
                     detections, annotated_bgr = detector.detect(user_image, conf_threshold=0.30, engine="hybrid")
@@ -536,61 +659,150 @@ if not is_dev:
                     severities = [d["severity"] for d in detections]
                     top_sev = "severe" if "severe" in severities else ("moderate" if "moderate" in severities else "minor")
                     sev_colors = {"severe": "🔴 SEVERE CAVITY", "moderate": "🟠 MODERATE CAVITY", "minor": "🟡 MINOR ABRASION"}
-
                     st.success(f"**AI Assessment Verdict:** {sev_colors[top_sev]} (Max confidence: {int(detections[0]['confidence']*100)}%)")
-
-                    st.markdown("#### 3. Submit & Forward to Municipality")
-                    with st.form("quick_report_form"):
-                        city_choice = st.selectbox("City Jurisdiction:", ["Mangaluru", "Bengaluru", "Udupi", "Mysuru"])
-                        default_locs = {
-                            "Mangaluru": (12.9152, 74.8988, "NH 73 near SJEC, Vamanjoor"),
-                            "Bengaluru": (12.9719, 77.6412, "100 Feet Road, Indiranagar"),
-                            "Udupi": (13.3408, 74.7421, "City Bus Stand Main Road"),
-                            "Mysuru": (12.3118, 76.6529, "Sayyaji Rao Road")
-                        }[city_choice]
-
-                        loc_landmark = st.text_input("Road Landmark:", value=default_locs[2])
-                        commuter_note = st.text_input("Short Note (optional):", value="Dangerous depth for two-wheelers at night")
-
-                        col_coords1, col_coords2 = st.columns(2)
-                        with col_coords1:
-                            r_lat = st.number_input("Latitude:", value=default_locs[0], format="%.5f")
-                        with col_coords2:
-                            r_lon = st.number_input("Longitude:", value=default_locs[1], format="%.5f")
-
-                        send_btn = st.form_submit_button("🚀 Submit Verified Hazard Report", type="primary")
-
-                        if send_btn:
-                            res = save_or_merge_pothole(
-                                lat=r_lat, lon=r_lon, city=city_choice, severity=top_sev,
-                                user_id="commuter_user_app", address=loc_landmark, note=commuter_note
-                            )
-                            pothole_obj = res["pothole"]
-                            city_cfg = get_city_config(city_choice)
-                            route_res = route_complaint(pothole_obj, city_cfg)
-
-                            st.balloons()
-                            st.success(f"✅ Report registered successfully! Hazard ID: `{pothole_obj['id']}`")
-                            if not res["is_new"]:
-                                st.info("ℹ️ Note: This hazard was automatically merged with an existing report within 15m to avoid municipal duplicate tickets.")
-
-                            if route_res.get("channel") == "whatsapp" and route_res.get("link"):
-                                st.markdown(f"""
-                                <div style="margin-top: 14px; text-align: center;">
-                                    <a class="wa-button" href="{route_res['link']}" target="_blank">
-                                        💬 Click to Forward to MCC Mangaluru WhatsApp Desk
-                                    </a>
-                                    <p style="font-size:0.82rem; color: #94A3B8; margin-top: 6px;">Opens official MCC WhatsApp (919449007722) with prefilled GPS & photo details.</p>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            elif route_res.get("channel") == "helpline":
-                                st.markdown(f"""
-                                <div style="margin-top: 14px; padding: 12px; background: rgba(59, 130, 246, 0.2); border-radius: 8px; border: 1px solid #3B82F6;">
-                                    📞 <b>Official Dispatch:</b> Forward to {route_res['authority']} Helpline: <b>{route_res['contact']}</b>
-                                </div>
-                                """, unsafe_allow_html=True)
                 else:
-                    st.info("✅ Road surface looks smooth! No hazardous potholes detected in this frame.")
+                    top_sev = "minor"
+                    st.info("Road frame has subtle abrasions or smooth surface. You can still report it.")
+
+                # Location & Civic Dispatch Form
+                st.markdown("#### 3. Real Location & Municipal Authority")
+
+                # Location Detection Tools
+                loc_tool_col1, loc_tool_col2 = st.columns(2)
+                with loc_tool_col1:
+                    if st.button("🌐 Auto-Detect via Network IP", use_container_width=True):
+                        ip_loc = detect_ip_location()
+                        st.session_state["report_lat"] = ip_loc["lat"]
+                        st.session_state["report_lon"] = ip_loc["lon"]
+                        rev = reverse_geocode(ip_loc["lat"], ip_loc["lon"])
+                        st.session_state["report_landmark"] = rev["road"]
+                        st.session_state["report_city"] = rev["city"]
+                        st.success(f"📍 Location detected: {rev['road']}, {rev['city']}")
+                        st.rerun()
+
+                with loc_tool_col2:
+                    # HTML5 Browser Geolocation trigger
+                    components.html("""
+                    <button onclick="getGPS()" style="
+                        width: 100%; height: 38px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);
+                        background: linear-gradient(135deg, #1E293B, #0F172A); color: #38BDF8; font-weight: 600;
+                        font-size: 0.88rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        🎯 Get Browser GPS
+                    </button>
+                    <script>
+                    function getGPS() {
+                        if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition(function(pos) {
+                                const lat = pos.coords.latitude.toFixed(5);
+                                const lon = pos.coords.longitude.toFixed(5);
+                                const pUrl = new URL(window.parent.location.href);
+                                pUrl.searchParams.set('user_gps', lat + ',' + lon);
+                                window.parent.location.href = pUrl.href;
+                            }, function(err) {
+                                alert('GPS access error: ' + err.message);
+                            }, {enableHighAccuracy: true, timeout: 6000});
+                        } else {
+                            alert('Geolocation not supported by this browser.');
+                        }
+                    }
+                    </script>
+                    """, height=44)
+
+                # Landmark / Address Search
+                search_col1, search_col2 = st.columns([3, 1])
+                with search_col1:
+                    srch_query = st.text_input("🔍 Search Landmark / Road Name:", placeholder="e.g. Kankanady Mangalore, SJEC Vamanjoor", label_visibility="collapsed")
+                with search_col2:
+                    if st.button("Search", use_container_width=True):
+                        if srch_query:
+                            geo_res = geocode_address(srch_query)
+                            if geo_res:
+                                st.session_state["report_lat"] = geo_res["lat"]
+                                st.session_state["report_lon"] = geo_res["lon"]
+                                st.session_state["report_landmark"] = geo_res["road"]
+                                st.session_state["report_city"] = geo_res["city"]
+                                st.success(f"Found: {geo_res['display_name'][:60]}")
+                                st.rerun()
+                            else:
+                                st.warning("Landmark not found.")
+
+                with st.form("quick_report_form"):
+                    coord_c1, coord_c2 = st.columns(2)
+                    with coord_c1:
+                        f_lat = st.number_input("Latitude:", value=float(st.session_state["report_lat"]), format="%.5f")
+                    with coord_c2:
+                        f_lon = st.number_input("Longitude:", value=float(st.session_state["report_lon"]), format="%.5f")
+
+                    # Auto reverse-geocode city and road
+                    det_city = get_city_from_coords(f_lat, f_lon)
+                    city_opts = ["Mangaluru", "Bengaluru", "Udupi", "Mysuru"]
+                    if det_city not in city_opts:
+                        city_opts.insert(0, det_city)
+                    city_idx = city_opts.index(det_city) if det_city in city_opts else 0
+
+                    f_city = st.selectbox("Municipal Jurisdiction (Auto-Identified):", city_opts, index=city_idx)
+                    f_landmark = st.text_input("Road Landmark / Address:", value=st.session_state["report_landmark"])
+                    f_note = st.text_input("Commuter Observation / Note:", value="Dangerous cavity depth for two-wheelers and night commuters")
+
+                    # Live authority preview
+                    city_cfg = get_city_config(f_city)
+                    st.markdown(f"""
+                    <div style="background: rgba(15, 23, 42, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3); margin-top: 8px;">
+                        <span style="font-size: 0.85rem; color: #94A3B8;">🏛️ Official Redressal Authority:</span>
+                        <div style="font-weight: 700; color: #38BDF8; font-size: 0.95rem;">{city_cfg.get('authority_name')}</div>
+                        <div style="font-size: 0.82rem; color: #CBD5E1; margin-top: 4px;">Channel: <b>{city_cfg.get('channel_type', 'whatsapp').upper()}</b> • Contact: <b>{city_cfg.get('contact_value')}</b></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    send_btn = st.form_submit_button("🚀 Submit Verified Hazard Report", type="primary", use_container_width=True)
+
+                    if send_btn:
+                        res = save_or_merge_pothole(
+                            lat=f_lat, lon=f_lon, city=f_city, severity=top_sev,
+                            user_id="commuter_user_app", address=f_landmark, note=f_note
+                        )
+                        pothole_obj = res["pothole"]
+                        route_res = route_complaint(pothole_obj, city_cfg)
+
+                        # Set focus for Tab 3 map
+                        st.session_state["focus_lat"] = f_lat
+                        st.session_state["focus_lon"] = f_lon
+                        st.session_state["focus_pothole_id"] = pothole_obj["id"]
+
+                        st.balloons()
+                        st.success(f"✅ Hazard registered in SQLite database! Hazard ID: `{pothole_obj['id']}` at coordinates ({f_lat:.5f}, {f_lon:.5f})")
+                        if not res["is_new"]:
+                            st.info("ℹ️ Automatically merged with existing report within 15m radius to prevent duplicate civic tickets.")
+
+                        # Show Dispatch Action
+                        if route_res.get("channel") == "whatsapp" and route_res.get("link"):
+                            st.markdown(f"""
+                            <div style="margin-top: 14px; text-align: center; background: rgba(37, 211, 102, 0.15); padding: 14px; border-radius: 10px; border: 1px solid #25D366;">
+                                <a class="wa-button" href="{route_res['link']}" target="_blank" style="
+                                    display: inline-block; padding: 10px 22px; background: #25D366; color: #FFFFFF; font-weight: 700;
+                                    border-radius: 8px; text-decoration: none; font-size: 1rem; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.35);">
+                                    💬 Forward to {route_res['authority']} WhatsApp Grievance Desk
+                                </a>
+                                <p style="font-size:0.84rem; color: #E2E8F0; margin-top: 8px; margin-bottom: 0;">
+                                    Pre-fills official complaint with exact GPS Google Maps link, photos, and severity.
+                                </p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        elif route_res.get("channel") == "helpline":
+                            st.markdown(f"""
+                            <div style="margin-top: 14px; padding: 12px; background: rgba(59, 130, 246, 0.2); border-radius: 8px; border: 1px solid #3B82F6;">
+                                📞 <b>Official Dispatch:</b> Forward to {route_res['authority']} Helpline: <b>{route_res['contact']}</b>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        # Mini map of exact pothole placement
+                        st.markdown("##### 📍 Verified Map Placement:")
+                        mini_df = pd.DataFrame([{"lat": f_lat, "lon": f_lon, "color": [239, 68, 68, 240]}])
+                        st.pydeck_chart(pdk.Deck(
+                            map_style="road",
+                            initial_view_state=pdk.ViewState(latitude=f_lat, longitude=f_lon, zoom=15, pitch=25),
+                            layers=[pdk.Layer("ScatterplotLayer", mini_df, get_position="[lon, lat]", get_color="color", get_radius=30)]
+                        ))
             else:
                 st.caption("Please select a sample road image or upload a photo to start.")
 
@@ -601,9 +813,18 @@ if not is_dev:
         st.markdown("### 🗺️ Live Road Safety Map")
         st.write("Browse verified hazards and repaired stretches in your city before starting your commute.")
 
+        # Focus banner if newly reported
+        if "focus_pothole_id" in st.session_state:
+            st.info(f"📍 **Focusing on your newly reported pothole** (ID: `{st.session_state['focus_pothole_id']}`) at coordinates: {st.session_state.get('focus_lat', 0):.5f}, {st.session_state.get('focus_lon', 0):.5f}")
+
+        # Dynamic city list from database
+        all_cities_in_db = [c["city"] for c in get_all_potholes() if c.get("city")]
+        unique_cities = sorted(list(set(all_cities_in_db + ["Mangaluru", "Bengaluru", "Udupi", "Mysuru"])))
+        city_options = ["All Cities"] + unique_cities
+
         map_c1, map_c2 = st.columns([1, 1])
         with map_c1:
-            u_map_city = st.selectbox("Select City:", ["All Cities", "Mangaluru", "Bengaluru", "Udupi", "Mysuru"])
+            u_map_city = st.selectbox("Select City Jurisdiction:", city_options, index=0)
         with map_c2:
             u_map_status = st.selectbox("Status Filter:", ["All", "Active Hazards", "Verified Fixed"])
 
@@ -614,16 +835,25 @@ if not is_dev:
 
         if all_p_map:
             p_records = []
+            focus_id = st.session_state.get("focus_pothole_id")
             for p in all_p_map:
-                if p["status"] == "verified_fixed":
+                is_focused = (focus_id and p["id"] == focus_id)
+                if is_focused:
+                    color = [255, 0, 128, 255]   # Neon Pink for recently submitted
+                    label_status = "JUST REPORTED"
+                    radius = 90
+                elif p["status"] == "verified_fixed":
                     color = [16, 185, 129, 220]  # Emerald Green
                     label_status = "REPAIRED"
+                    radius = 55
                 elif p["severity"] == "severe":
                     color = [239, 68, 68, 230]   # Red
                     label_status = "ACTIVE SEVERE"
+                    radius = 65
                 else:
                     color = [245, 158, 11, 230]  # Amber
                     label_status = "ACTIVE MODERATE"
+                    radius = 55
 
                 p_records.append({
                     "id": p["id"],
@@ -634,17 +864,29 @@ if not is_dev:
                     "severity": p["severity"].upper(),
                     "status": label_status,
                     "confirmations": p["confirmation_count"],
-                    "color": color
+                    "color": color,
+                    "radius": radius,
+                    "maps_link": f"https://maps.google.com/?q={p['lat']},{p['lon']}"
                 })
 
             df_p_map = pd.DataFrame(p_records)
 
+            # Center map on focused pothole if available, else center on mean
+            if "focus_lat" in st.session_state and "focus_lon" in st.session_state and c_arg is None:
+                view_lat = float(st.session_state["focus_lat"])
+                view_lon = float(st.session_state["focus_lon"])
+                view_zoom = 14
+            else:
+                view_lat = df_p_map["lat"].mean()
+                view_lon = df_p_map["lon"].mean()
+                view_zoom = 12
+
             view_deck = pdk.Deck(
                 map_style="road",
                 initial_view_state=pdk.ViewState(
-                    latitude=df_p_map["lat"].mean(),
-                    longitude=df_p_map["lon"].mean(),
-                    zoom=12,
+                    latitude=view_lat,
+                    longitude=view_lon,
+                    zoom=view_zoom,
                     pitch=35
                 ),
                 layers=[
@@ -653,13 +895,13 @@ if not is_dev:
                         df_p_map,
                         get_position="[lon, lat]",
                         get_color="color",
-                        get_radius=55,
+                        get_radius="radius",
                         pickable=True,
                         auto_highlight=True
                     )
                 ],
                 tooltip={
-                    "html": "<b>{address}</b><br>City: {city}<br>Condition: <b>{status}</b><br>Votes: {confirmations}",
+                    "html": "<b>{address}</b><br>City: {city}<br>Condition: <b>{status}</b><br>Votes: {confirmations}<br><a href='{maps_link}' target='_blank' style='color:#38BDF8;'>Open in Google Maps ↗</a>",
                     "style": {"backgroundColor": "#0F172A", "color": "#FFFFFF", "borderRadius": "8px", "padding": "8px"}
                 }
             )
@@ -752,20 +994,16 @@ else:
 
         with col_dev_img:
             st.markdown("#### 1. Input Test Frame")
-            test_img_pick = st.selectbox(
-                "Select Benchmark Frame:",
-                [
-                    "Sample 1: Severe Road Cavity (sample_severe_pothole.jpg)",
-                    "Sample 2: Moderate Asphalt Cavity (sample_moderate_pothole.jpg)",
-                    "Sample 3: Clean Road Control (sample_clean_road.jpg)"
-                ]
-            )
-            file_map = {
+            bench_picks = {
                 "Sample 1: Severe Road Cavity (sample_severe_pothole.jpg)": os.path.join(samples_dir, "sample_severe_pothole.jpg"),
                 "Sample 2: Moderate Asphalt Cavity (sample_moderate_pothole.jpg)": os.path.join(samples_dir, "sample_moderate_pothole.jpg"),
                 "Sample 3: Clean Road Control (sample_clean_road.jpg)": os.path.join(samples_dir, "sample_clean_road.jpg"),
             }
-            loaded_img = Image.open(file_map[test_img_pick])
+            # Include real dataset images if available
+            bench_picks.update(get_dataset_samples(limit=25))
+
+            test_img_pick = st.selectbox("Select Benchmark Frame:", list(bench_picks.keys()))
+            loaded_img = Image.open(bench_picks[test_img_pick])
             st.image(loaded_img, caption="Benchmark Input Frame (640x640 normalized)", use_container_width=True)
 
             st.markdown("#### 2. Inference Hyperparameters")

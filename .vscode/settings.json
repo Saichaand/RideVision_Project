@@ -1,0 +1,10 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/05_Backend",
+        "${workspaceFolder}/06_Web_Dashboard"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}/05_Backend",
+        "${workspaceFolder}/06_Web_Dashboard"
+    ]
+}
