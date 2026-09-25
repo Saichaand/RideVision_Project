@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">RideVision</string>
+    <string name="title_detection">RideVision AI</string>
+    <string name="btn_pick_photo">Pick Photo</string>
+    <string name="btn_toggle_camera">Live Camera</string>
+    <string name="btn_file_report">Report Hazard</string>
+    <string name="status_ready">Scanner Ready — AI Model Loaded</string>
+    <string name="warning_safe">Road Ahead Clear</string>
+</resources>

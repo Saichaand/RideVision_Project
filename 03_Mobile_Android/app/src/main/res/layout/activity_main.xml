@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background_dark">
+
+    <!-- Header Toolbar -->
+    <LinearLayout
+        android:id="@+id/headerLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:gravity="center_vertical"
+        android:background="@color/surface_dark"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/appTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="RideVision AI"
+            android:textColor="@color/primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/gpsStatusBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📍 GPS Active"
+            android:textColor="@color/hazard_safe"
+            android:textSize="13sp"
+            android:background="#1B3320"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp" />
+    </LinearLayout>
+
+    <!-- Proactive Hazard Warning Banner (Appears when pothole ahead) -->
+    <LinearLayout
+        android:id="@+id/warningBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#3D1212"
+        android:padding="12dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/headerLayout">
+
+        <TextView
+            android:id="@+id/warningTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚠️ HAZARD AHEAD: SEVERE POTHOLE 140m"
+            android:textColor="@color/hazard_severe"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/warningSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Reduce speed — Kankanady Bypass Road"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <!-- Main Viewfinder / Image Display -->
+    <FrameLayout
+        android:id="@+id/viewportContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_margin="12dp"
+        android:background="@color/surface_dark"
+        app:layout_constraintTop_toBottomOf="@id/warningBanner"
+        app:layout_constraintBottom_toTopOf="@id/statsCard"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageView
+            android:id="@+id/imageView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:contentDescription="Road Camera Frame" />
+
+        <TextView
+            android:id="@+id/placeholderText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Tap 'Pick Photo' to analyze road surface\nwith on-device YOLOv8"
+            android:textAlignment="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+    </FrameLayout>
+
+    <!-- Real-time AI Inference Stats Card -->
+    <LinearLayout
+        android:id="@+id/statsCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/surface_dark"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginBottom="12dp"
+        android:padding="14dp"
+        app:layout_constraintBottom_toTopOf="@id/actionsLayout">
+
+        <TextView
+            android:id="@+id/resultStatusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="AI Model: best.tflite (YOLOv8 Nano, 640x640)"
+            android:textColor="@color/accent"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/resultDetailsText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ready to detect road cavities and surface hazards."
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+
+    <!-- Bottom Controls -->
+    <LinearLayout
+        android:id="@+id/actionsLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="@color/surface_dark"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <Button
+            android:id="@+id/pickButton"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:text="Pick Photo"
+            android:backgroundTint="@color/surface_dark"
+            android:textColor="@color/text_primary"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/reportButton"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1.2"
+            android:text="Report Hazard"
+            android:backgroundTint="@color/primary"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="6dp" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
