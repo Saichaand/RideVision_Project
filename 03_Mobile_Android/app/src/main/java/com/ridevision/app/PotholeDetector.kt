@@ -9,25 +9,29 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import kotlin.math.exp
 
 /**
- * Wraps the YOLOv8n TFLite pothole model (best.tflite) exported from the training pipeline.
- * Input: 640x640 RGB image.
- * Output: [1, 5, 8400] tensor (cx, cy, w, h, confidence) for single-class pothole detector.
- *
- * Uses core TensorFlow Lite runtime without dependency on external support packages
- * for maximum compatibility across AGP versions.
+ * Wraps the YOLOv8n TFLite pothole model (best.tflite).
+ * Supports flexible output tensor shapes ([1, 5, 8400], [1, 8400, 5], etc.),
+ * auto-detects raw logits vs sigmoid probabilities, and handles coordinate scaling.
  */
 class PotholeDetector(
     context: Context,
     modelFileName: String = "best.tflite",
-    private val confidenceThreshold: Float = 0.35f,
+    var confidenceThreshold: Float = 0.20f,
     private val iouThreshold: Float = 0.45f
 ) {
     data class Detection(
         val box: RectF,
         val confidence: Float,
         val severity: String = "moderate"
+    )
+
+    data class AnalysisResult(
+        val detections: List<Detection>,
+        val maxRawScore: Float,
+        val outputShape: String
     )
 
     private val inputSize = 640
@@ -74,52 +78,124 @@ class PotholeDetector(
         return buffer
     }
 
+    private fun sigmoid(x: Float): Float {
+        return 1.0f / (1.0f + exp(-x))
+    }
+
     /**
-     * Executes inference on a frame.
-     * Returned bounding boxes are scaled to the ORIGINAL bitmap's width & height.
+     * Executes inference on a frame and returns comprehensive analysis data.
      */
-    fun detect(bitmap: Bitmap): List<Detection> {
+    fun analyze(bitmap: Bitmap): AnalysisResult {
         val origWidth = bitmap.width
         val origHeight = bitmap.height
 
         val inputBuffer = bitmapToInputBuffer(bitmap)
 
-        // YOLOv8 single-class output shape: [1, 5, 8400]
-        val numAnchors = 8400
-        val output = Array(1) { Array(5) { FloatArray(numAnchors) } }
-        interpreter.run(inputBuffer, output)
+        val outputTensor = interpreter.getOutputTensor(0)
+        val shape = outputTensor.shape() // e.g. [1, 5, 8400] or [1, 8400, 5]
+        val shapeString = shape.joinToString("x")
 
         val candidates = mutableListOf<Detection>()
+        var highestScoreFound = 0f
 
-        for (i in 0 until numAnchors) {
-            val conf = output[0][4][i]
-            if (conf < confidenceThreshold) continue
+        if (shape.size == 3) {
+            val dim1 = shape[1]
+            val dim2 = shape[2]
 
-            val cx = output[0][0][i]
-            val cy = output[0][1][i]
-            val w = output[0][2][i]
-            val h = output[0][3][i]
+            if (dim1 < dim2) {
+                // Shape is [1, C, N], e.g. [1, 5, 8400]
+                val numChannels = dim1
+                val numAnchors = dim2
+                val output = Array(1) { Array(numChannels) { FloatArray(numAnchors) } }
+                interpreter.run(inputBuffer, output)
 
-            // Convert center format (cx, cy, w, h) to original image pixel coordinates
-            val left = (cx - w / 2f) / inputSize * origWidth
-            val top = (cy - h / 2f) / inputSize * origHeight
-            val right = (cx + w / 2f) / inputSize * origWidth
-            val bottom = (cy + h / 2f) / inputSize * origHeight
+                for (i in 0 until numAnchors) {
+                    var maxScore = 0f
+                    for (c in 4 until numChannels) {
+                        var score = output[0][c][i]
+                        // Apply sigmoid if score is raw logit
+                        if (score < 0f || score > 1f) {
+                            score = sigmoid(score)
+                        }
+                        if (score > maxScore) maxScore = score
+                    }
 
-            val bw = right - left
-            val bh = bottom - top
-            val areaRatio = (bw * bh) / (origWidth * origHeight.toFloat())
+                    if (maxScore > highestScoreFound) highestScoreFound = maxScore
+                    if (maxScore < confidenceThreshold) continue
 
-            val severity = when {
-                areaRatio > 0.05f || bw > 180f -> "severe"
-                areaRatio > 0.018f || bw > 90f -> "moderate"
-                else -> "minor"
+                    val cx = output[0][0][i]
+                    val cy = output[0][1][i]
+                    val w = output[0][2][i]
+                    val h = output[0][3][i]
+
+                    addCandidate(cx, cy, w, h, maxScore, origWidth, origHeight, candidates)
+                }
+            } else {
+                // Shape is [1, N, C], e.g. [1, 8400, 5]
+                val numAnchors = dim1
+                val numChannels = dim2
+                val output = Array(1) { Array(numAnchors) { FloatArray(numChannels) } }
+                interpreter.run(inputBuffer, output)
+
+                for (i in 0 until numAnchors) {
+                    var maxScore = 0f
+                    for (c in 4 until numChannels) {
+                        var score = output[0][i][c]
+                        if (score < 0f || score > 1f) {
+                            score = sigmoid(score)
+                        }
+                        if (score > maxScore) maxScore = score
+                    }
+
+                    if (maxScore > highestScoreFound) highestScoreFound = maxScore
+                    if (maxScore < confidenceThreshold) continue
+
+                    val cx = output[0][i][0]
+                    val cy = output[0][i][1]
+                    val w = output[0][i][2]
+                    val h = output[0][i][3]
+
+                    addCandidate(cx, cy, w, h, maxScore, origWidth, origHeight, candidates)
+                }
             }
-
-            candidates.add(Detection(RectF(left, top, right, bottom), conf, severity))
         }
 
-        return nonMaxSuppression(candidates)
+        val filtered = nonMaxSuppression(candidates)
+        return AnalysisResult(filtered, highestScoreFound, shapeString)
+    }
+
+    fun detect(bitmap: Bitmap): List<Detection> {
+        return analyze(bitmap).detections
+    }
+
+    private fun addCandidate(
+        cx: Float, cy: Float, w: Float, h: Float,
+        conf: Float, origWidth: Int, origHeight: Int,
+        candidates: MutableList<Detection>
+    ) {
+        if (w <= 0f || h <= 0f) return
+
+        val scaleX = if (cx > 2.0f || w > 2.0f) 1f / inputSize else 1f
+        val scaleY = if (cy > 2.0f || h > 2.0f) 1f / inputSize else 1f
+
+        val left = ((cx - w / 2f) * scaleX * origWidth).coerceIn(0f, origWidth.toFloat())
+        val top = ((cy - h / 2f) * scaleY * origHeight).coerceIn(0f, origHeight.toFloat())
+        val right = ((cx + w / 2f) * scaleX * origWidth).coerceIn(0f, origWidth.toFloat())
+        val bottom = ((cy + h / 2f) * scaleY * origHeight).coerceIn(0f, origHeight.toFloat())
+
+        val bw = right - left
+        val bh = bottom - top
+        if (bw <= 1f || bh <= 1f) return
+
+        val areaRatio = (bw * bh) / (origWidth * origHeight.toFloat())
+
+        val severity = when {
+            areaRatio > 0.05f || bw > (origWidth * 0.25f) -> "severe"
+            areaRatio > 0.015f || bw > (origWidth * 0.12f) -> "moderate"
+            else -> "minor"
+        }
+
+        candidates.add(Detection(RectF(left, top, right, bottom), conf, severity))
     }
 
     /** Greedy Non-Maximum Suppression to remove duplicate candidate boxes. */
