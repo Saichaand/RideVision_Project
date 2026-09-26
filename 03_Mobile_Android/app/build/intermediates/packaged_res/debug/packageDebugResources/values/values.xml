@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent">#FF9800</color>
+    <color name="background_dark">#121212</color>
+    <color name="hazard_moderate">#FF9500</color>
+    <color name="hazard_safe">#34C759</color>
+    <color name="hazard_severe">#FF3B30</color>
+    <color name="primary">#FF4B4B</color>
+    <color name="primary_dark">#D32F2F</color>
+    <color name="surface_dark">#1E1E24</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0B0B0</color>
+    <string name="app_name">RideVision</string>
+    <string name="btn_file_report">Report Hazard</string>
+    <string name="btn_pick_photo">Pick Photo</string>
+    <string name="btn_toggle_camera">Live Camera</string>
+    <string name="status_ready">Scanner Ready — AI Model Loaded</string>
+    <string name="title_detection">RideVision AI</string>
+    <string name="warning_safe">Road Ahead Clear</string>
+    <style name="Theme.RideVision" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_dark</item>
+        <item name="colorOnPrimary">@color/text_primary</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.ridevision.app-mergeDebugResources-41:/layout/activity_main.xml",
+        "source": "com.ridevision.app-main-44:/layout/activity_main.xml"
+    },
+    {
+        "merged": "C:\\Users\\saich\\.gradle\\daemon\\9.6.0\\com.ridevision.app-mergeDebugResources-41:\\layout\\activity_main.xml",
+        "source": "C:\\Users\\saich\\.gradle\\daemon\\9.6.0\\com.ridevision.app-main-44:\\layout\\activity_main.xml"
+    }
+]
