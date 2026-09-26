@@ -626,9 +626,14 @@ if not is_dev:
             if img_mode == "Use Benchmark / Dataset Sample":
                 # Combine standard samples with real dataset images
                 # Only use real dataset images if available
-sample_picks = {}
-dataset_images = get_dataset_samples(limit=25)
-sample_picks.update(dataset_images)
+                sample_picks = {
+                    "🔴 Severe Pothole (NH 73 Mangaluru)": os.path.join(samples_dir, "sample_severe_pothole.jpg"),
+                    "🟠 Moderate Cavity (City Asphalt)": os.path.join(samples_dir, "sample_moderate_pothole.jpg"),
+                    "🟢 Clean Resurfaced Road": os.path.join(samples_dir, "sample_clean_road.jpg")
+                }
+                # Add real dataset images if available
+                dataset_images = get_dataset_samples(limit=25)
+                sample_picks.update(dataset_images)
 
                 pick_label = st.selectbox("Pick a Road Frame:", list(sample_picks.keys()))
                 path = sample_picks[pick_label]

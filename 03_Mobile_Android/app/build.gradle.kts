@@ -64,6 +64,7 @@ dependencies {
 
     // TensorFlow Lite Runtime
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // Networking (Retrofit + OkHttp + Gson)
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
