@@ -122,7 +122,7 @@ def root():
     return {
         "system": "RideVision API",
         "status": "online",
-        "detector_engine": "YOLOv8" if detector.is_yolo_loaded else "OpenCV CV Fallback",
+        "detector_engine": "YOLOv8" if detector.is_yolo_loaded else "offline",
         "version": "2.0.0",
         "endpoints": [
             "/api/detect",

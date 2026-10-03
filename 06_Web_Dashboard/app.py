@@ -40,6 +40,18 @@ BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "05_
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+import importlib
+import database as database_mod
+import geo_matching as geo_matching_mod
+import detector as detector_mod
+
+try:
+    importlib.reload(database_mod)
+    importlib.reload(geo_matching_mod)
+    importlib.reload(detector_mod)
+except Exception:
+    pass
+
 from database import (
     init_db,
     get_all_potholes,
@@ -67,9 +79,13 @@ from geo_matching import (
     geocode_address,
     detect_ip_location,
     get_route_osrm,
+    parse_gpx_content,
+    parse_csv_gps_log,
+    parse_gps_track,
+    load_gpx_file,
     route_complaint
 )
-from detector import detector
+detector = detector_mod.detector
 
 # Ensure database is initialized
 init_db()
@@ -256,7 +272,7 @@ c_s3.metric("Confirmations", stats["total_confirmations"])
 c_s4.metric("Civic Fix Rate", f"{stats['fix_rate_percent']}%")
 
 st.sidebar.markdown("---")
-detector_status = "🟢 YOLOv8 Loaded" if detector.is_yolo_loaded else "🟡 OpenCV Fallback"
+detector_status = "🟢 YOLOv8 Nano" if detector.is_yolo_loaded else "🔴 Model Initializing"
 st.sidebar.caption(f"**Vision Engine:** {detector_status}")
 st.sidebar.caption("**Backend API:** `FastAPI @ :8000`")
 st.sidebar.caption("St Joseph Engineering College (SJEC) – AIML")
@@ -292,8 +308,8 @@ tab_model, tab_sim, tab_map, tab_db, tab_api, tab_pbl = st.tabs([
 # TAB 1: CV MODEL & INFERENCE LAB
 # ------------------------------------------------------------------------------
 with tab_model:
-    st.markdown("### 🧠 Computer Vision & Edge Model Benchmarks")
-    st.write("Inspect neural network inference, test YOLOv8 vs OpenCV contour fallback, adjust hyper-parameters, and inspect bounding box tensor metrics.")
+    st.markdown("### 🧠 YOLOv8 Computer Vision & Edge Model Benchmarks")
+    st.write("Inspect YOLOv8 neural network inference, adjust confidence cutoff and NMS IoU suppression hyper-parameters, and inspect bounding box tensor metrics.")
 
     samples_dir = os.path.join(os.path.dirname(__file__), "samples")
     col_dev_img, col_dev_res = st.columns([1, 1.4])
@@ -325,14 +341,17 @@ with tab_model:
         loaded_img = Image.open(bench_picks[test_img_pick])
         st.image(loaded_img, caption="Benchmark Input Frame (640x640 normalized)", use_container_width=True)
 
-        st.markdown("#### 2. Inference Hyperparameters")
-        dev_conf = st.slider("Confidence Cutoff Threshold:", 0.05, 0.95, 0.30, 0.05)
-        dev_engine = st.selectbox("Inference Engine Runtime:", ["hybrid", "yolo", "opencv"])
+        st.markdown("#### 2. YOLOv8 Inference Hyperparameters")
+        c_p1, c_p2 = st.columns(2)
+        with c_p1:
+            dev_conf = st.slider("Confidence Cutoff Threshold:", 0.05, 0.95, 0.40, 0.05, help="Minimum confidence required to classify a detected cavity")
+        with c_p2:
+            dev_iou = st.slider("NMS IoU Suppression Threshold:", 0.10, 0.80, 0.35, 0.05, help="Controls overlap suppression to eliminate duplicate boxes on same pothole")
 
     with col_dev_res:
         st.markdown("#### 3. Execution Telemetry")
         t_start = time.perf_counter()
-        detections, ann_bgr = detector.detect(loaded_img, conf_threshold=dev_conf, engine=dev_engine)
+        detections, ann_bgr = detector.detect(loaded_img, conf_threshold=dev_conf, iou_threshold=dev_iou)
         t_elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
         ann_rgb = Image.fromarray(cv2.cvtColor(ann_bgr, cv2.COLOR_BGR2RGB)) if 'cv2' in sys.modules else loaded_img
 
@@ -380,82 +399,62 @@ with tab_sim:
     col_sim_ctrl, col_hud_display = st.columns([1.1, 1.4])
 
     with col_sim_ctrl:
-        st.markdown("#### 🛣️ Commute Route & Navigation")
-        route_mode = st.radio("Route Selection:", ["Popular City Commutes", "Custom Origin & Destination"], horizontal=True)
-
-        preset_routes = {
-            "Mangaluru — SJEC Vamanjoor to Kankanady (NH 73)": {
-                "start": (12.9152, 74.8988, "SJEC Vamanjoor Gate"),
-                "end": (12.8715, 74.8564, "Kankanady Junction"),
-                "city": "Mangaluru"
-            },
-            "Mangaluru — Kadri Mallikatte to Hampankatta": {
-                "start": (12.8798, 74.8532, "Kadri Mallikatte"),
-                "end": (12.8646, 74.8425, "Hampankatta City Center"),
-                "city": "Mangaluru"
-            },
-            "Bengaluru — Indiranagar 100ft Road to Domlur": {
-                "start": (12.9719, 77.6412, "Indiranagar 100ft Road"),
-                "end": (12.9610, 77.6410, "Domlur Flyover"),
-                "city": "Bengaluru"
-            },
-            "Udupi — Manipal Tiger Circle to City Bus Stand": {
-                "start": (13.3525, 74.7865, "Manipal Tiger Circle"),
-                "end": (13.3408, 74.7421, "Udupi Bus Stand"),
-                "city": "Udupi"
-            }
-        }
-
-        if route_mode == "Popular City Commutes":
-            sel_route_label = st.selectbox("Select Commute Corridor:", list(preset_routes.keys()))
-            route_meta = preset_routes[sel_route_label]
-            start_lat, start_lon, start_name = route_meta["start"]
-            end_lat, end_lon, end_name = route_meta["end"]
+        st.markdown("#### 🛣️ Recorded Commute GPS Route")
+        csv_path = os.path.join(os.path.dirname(__file__), "commute_route.csv")
+        gpx_path = os.path.join(os.path.dirname(__file__), "gpx_routes", "mangaluru_user_recorded_commute.gpx")
+        root_csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "commute_route.csv")
+        
+        if os.path.exists(csv_path):
+            route_data = load_gpx_file(csv_path)
+        elif os.path.exists(root_csv_path):
+            route_data = load_gpx_file(root_csv_path)
+        elif os.path.exists(gpx_path):
+            route_data = load_gpx_file(gpx_path)
         else:
-            c_start_in, c_end_in = st.columns(2)
-            with c_start_in:
-                custom_start = st.text_input("Start Location:", value="SJEC Vamanjoor, Mangaluru")
-            with c_end_in:
-                custom_dest = st.text_input("Destination:", value="Kankanady, Mangaluru")
+            # Fallback inline coordinates from recorded log
+            route_data = {
+                "name": "Mangaluru: Kudupu to SJEC Vamanjoor Commute Log",
+                "coordinates": [
+                    [12.9212923, 74.8651359],
+                    [12.9187606, 74.8680822],
+                    [12.9160795, 74.8755951],
+                    [12.9176948, 74.8804785],
+                    [12.9152294, 74.8839134],
+                    [12.9150299, 74.8874427],
+                    [12.9146838, 74.8875795],
+                    [12.9142577, 74.8886940],
+                    [12.9141977, 74.8884412],
+                    [12.9120148, 74.8917148],
+                    [12.9104978, 74.8965336],
+                    [12.9117471, 74.8990154],
+                    [12.9121512, 74.9002380],
+                    [12.9122396, 74.8998308]
+                ],
+                "distance_km": 4.36,
+                "duration_min": 7.5,
+                "total_points": 14,
+                "source": "gps_csv_log"
+            }
 
-            if st.button("📍 Geocode & Trace Route", use_container_width=True):
-                g_start = geocode_address(custom_start)
-                g_dest = geocode_address(custom_dest)
-                if g_start and g_dest:
-                    st.session_state["custom_route_coords"] = (
-                        g_start["lat"], g_start["lon"], g_start["road"],
-                        g_dest["lat"], g_dest["lon"], g_dest["road"]
-                    )
-                    st.success(f"Route traced: {g_start['road']} ➔ {g_dest['road']}")
-                else:
-                    st.warning("Could not geocode one of the addresses. Using default coordinates.")
-
-            if "custom_route_coords" in st.session_state:
-                start_lat, start_lon, start_name, end_lat, end_lon, end_name = st.session_state["custom_route_coords"]
-            else:
-                start_lat, start_lon, start_name = (12.9152, 74.8988, "SJEC Vamanjoor Gate")
-                end_lat, end_lon, end_name = (12.8715, 74.8564, "Kankanady Junction")
-
-        # Route Calculation (cached in session state per endpoints)
-        route_key = f"osrm_{start_lat:.4f}_{start_lon:.4f}_{end_lat:.4f}_{end_lon:.4f}"
-        if route_key not in st.session_state:
-            with st.spinner("Computing real driving route via OSRM..."):
-                st.session_state[route_key] = get_route_osrm(start_lat, start_lon, end_lat, end_lon)
-
-        route_data = st.session_state[route_key]
         route_coords = route_data["coordinates"]
         total_pts = len(route_coords)
+        track_title = route_data.get("name", "Hardwired Commute GPS Route")
+        start_name = f"Start ({route_coords[0][0]:.5f}, {route_coords[0][1]:.5f})" if total_pts > 0 else "Start"
+        end_name = f"Destination ({route_coords[-1][0]:.5f}, {route_coords[-1][1]:.5f})" if total_pts > 0 else "Destination"
 
         st.markdown(f"""
-        <div style="background: rgba(30, 41, 59, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.88rem;">
+        <div style="background: rgba(30, 41, 59, 0.6); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.25); margin-bottom: 12px;">
+            <div style="font-weight: 700; color: #38BDF8; font-size: 0.95rem; margin-bottom: 6px;">
+                📍 {track_title}
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.88rem; color: #E2E8F0;">
                 <span>🚩 <b>Start:</b> {start_name}</span>
                 <span>🏁 <b>Dest:</b> {end_name}</span>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.88rem; color: #38BDF8; margin-top: 6px;">
-                <span>🛣️ Distance: <b>{route_data['distance_km']} km</b></span>
-                <span>⏱️ Est. Drive Time: <b>{route_data['duration_min']} mins</b></span>
-                <span>📍 Waypoints: <b>{total_pts}</b></span>
+            <div style="display: flex; justify-content: space-between; font-size: 0.88rem; color: #94A3B8; margin-top: 8px;">
+                <span>🛣️ Distance: <b style="color:#FFFFFF;">{route_data['distance_km']} km</b></span>
+                <span>⏱️ Est. Drive Time: <b style="color:#FFFFFF;">{route_data['duration_min']} mins</b></span>
+                <span>📍 GPS Waypoints: <b style="color:#FFFFFF;">{total_pts} Logged Points</b></span>
             </div>
         </div>
         """, unsafe_allow_html=True)

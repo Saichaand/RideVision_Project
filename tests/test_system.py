@@ -180,11 +180,23 @@ class TestRideVisionSystem(unittest.TestCase):
         self.assertTrue(os.path.exists(sample_path))
 
         img = Image.open(sample_path)
-        detections, annotated = detector.detect(img, conf_threshold=0.30, engine="hybrid")
+        detections, annotated = detector.detect(img, conf_threshold=0.30)
         self.assertTrue(len(detections) > 0, "Detector should detect the pothole cavity")
         self.assertIn("severity", detections[0])
         self.assertEqual(detections[0]["severity"], "severe")
         self.assertIsNotNone(annotated)
+
+    def test_08_gpx_route_parsing(self):
+        """Test parsing and loading of standard GPX route tracks."""
+        from geo_matching import load_gpx_file, parse_gpx_content
+        gpx_file = os.path.join(PROJECT_ROOT, "06_Web_Dashboard", "gpx_routes", "mangaluru_sjec_to_kankanady.gpx")
+        self.assertTrue(os.path.exists(gpx_file))
+
+        res = load_gpx_file(gpx_file)
+        self.assertEqual(res["status"], "success")
+        self.assertGreater(res["total_points"], 10)
+        self.assertGreater(res["distance_km"], 1.0)
+        self.assertEqual(len(res["coordinates"]), res["total_points"])
 
 
 if __name__ == "__main__":

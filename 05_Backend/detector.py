@@ -1,19 +1,21 @@
 """
 Computer Vision Inference Engine for RideVision.
 
-Loads the YOLOv8 model (best.pt) and executes inference on input images/frames.
-Includes severity estimation, confidence calibration, and frame annotation.
-Equipped with an OpenCV heuristic fallback if neural net runtime is initializing.
+Dedicated YOLOv8 Deep Learning Pothole Detector (best.pt).
+Executes edge neural network inference on input frames with:
+  - Tightened Non-Maximum Suppression (NMS) IoU deduplication
+  - Automatic containment & duplicate box suppression
+  - Geometric surface-area damage severity classification (Severe / Moderate / Minor)
+  - Visual bounding box and confidence tag annotation
 """
 
 import os
-import io
 from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 import cv2
 from PIL import Image
 
-# Search paths for trained model weights
+# Search paths for trained YOLOv8 model weights
 MODEL_CANDIDATE_PATHS = [
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "best.pt")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "best.pt")),
@@ -22,8 +24,9 @@ MODEL_CANDIDATE_PATHS = [
 
 
 class PotholeDetector:
-    def __init__(self, confidence_threshold: float = 0.35):
+    def __init__(self, confidence_threshold: float = 0.35, iou_threshold: float = 0.35):
         self.conf_threshold = confidence_threshold
+        self.iou_threshold = iou_threshold
         self.model = None
         self.model_path = None
         self.is_yolo_loaded = False
@@ -39,29 +42,85 @@ class PotholeDetector:
         if self.model_path:
             try:
                 from ultralytics import YOLO
-                print(f"[RideVision Detector] Loading YOLO weights from: {self.model_path}")
+                print(f"[RideVision Detector] Loading YOLOv8 weights from: {self.model_path}")
                 self.model = YOLO(self.model_path)
                 self.is_yolo_loaded = True
                 print("[RideVision Detector] YOLOv8 model loaded successfully.")
             except Exception as e:
-                print(f"[RideVision Detector] Notice: Ultralytics/PyTorch could not load {self.model_path} ({e}). Using OpenCV computer-vision engine.")
+                print(f"[RideVision Detector] Error loading YOLOv8 model from {self.model_path}: {e}")
                 self.is_yolo_loaded = False
         else:
-            print("[RideVision Detector] Warning: best.pt not found in candidate paths. Using OpenCV CV engine.")
+            print("[RideVision Detector] Warning: best.pt not found in candidate paths.")
+
+    @staticmethod
+    def _suppress_overlapping_boxes(
+        boxes: List[Tuple[float, float, float, float, float, int]],
+        iou_thresh: float = 0.35,
+        containment_thresh: float = 0.65
+    ) -> List[Tuple[float, float, float, float, float, int]]:
+        """
+        Suppresses redundant, overlapping, or nested bounding boxes for the same pothole.
+        Keeps higher-confidence boxes.
+        """
+        if not boxes:
+            return []
+
+        # Sort by confidence descending
+        sorted_boxes = sorted(boxes, key=lambda b: b[4], reverse=True)
+        keep = []
+
+        for b in sorted_boxes:
+            suppress = False
+            b_w = max(0.0, b[2] - b[0])
+            b_h = max(0.0, b[3] - b[1])
+            b_area = b_w * b_h
+
+            # Filter trivial noise slivers
+            if b_w < 10 or b_h < 8:
+                continue
+
+            for k in keep:
+                # Intersection
+                ix1 = max(b[0], k[0])
+                iy1 = max(b[1], k[1])
+                ix2 = min(b[2], k[2])
+                iy2 = min(b[3], k[3])
+                inter_w = max(0.0, ix2 - ix1)
+                inter_h = max(0.0, iy2 - iy1)
+                inter_area = inter_w * inter_h
+
+                if inter_area > 0:
+                    k_w = max(0.0, k[2] - k[0])
+                    k_h = max(0.0, k[3] - k[1])
+                    k_area = k_w * k_h
+                    union_area = b_area + k_area - inter_area
+                    iou = inter_area / union_area if union_area > 0 else 0.0
+                    min_area = min(b_area, k_area)
+                    containment = inter_area / min_area if min_area > 0 else 0.0
+
+                    if iou > iou_thresh or containment > containment_thresh:
+                        suppress = True
+                        break
+
+            if not suppress:
+                keep.append(b)
+
+        return keep
 
     def detect(
         self,
         image_input: Any,
         conf_threshold: Optional[float] = None,
-        engine: str = "hybrid"  # 'yolo', 'opencv', or 'hybrid'
+        iou_threshold: Optional[float] = None,
+        engine: Optional[str] = None  # retained for backward compatibility
     ) -> Tuple[List[Dict[str, Any]], np.ndarray]:
         """
-        Runs pothole detection on the given image.
-        Accepts: PIL Image, NumPy array (BGR/RGB), or raw bytes.
-        engine: 'yolo', 'opencv', or 'hybrid'
+        Runs YOLOv8 pothole detection on the given image.
+        Accepts: PIL Image, NumPy array (BGR/RGB), or raw image bytes.
         Returns: (list_of_detections, annotated_image_bgr)
         """
         threshold = conf_threshold if conf_threshold is not None else self.conf_threshold
+        iou_thresh = iou_threshold if iou_threshold is not None else self.iou_threshold
 
         # Convert input to BGR numpy array
         if isinstance(image_input, bytes):
@@ -88,10 +147,19 @@ class PotholeDetector:
 
         detections: List[Dict[str, Any]] = []
 
-        # 1. Run YOLO if selected and available
-        if engine in ("yolo", "hybrid") and self.is_yolo_loaded and self.model is not None:
+        # Execute YOLOv8 Neural Network Inference
+        if self.is_yolo_loaded and self.model is not None:
             try:
-                results = self.model(img_bgr, conf=threshold, verbose=False)
+                results = self.model(
+                    img_bgr,
+                    conf=threshold,
+                    iou=iou_thresh,
+                    agnostic_nms=True,
+                    imgsz=640,
+                    max_det=15,
+                    verbose=False
+                )
+                raw_boxes = []
                 for r in results:
                     boxes = r.boxes
                     for box in boxes:
@@ -100,106 +168,40 @@ class PotholeDetector:
                         cls_id = int(box.cls[0].cpu().numpy()) if box.cls is not None else 0
 
                         x1, y1, x2, y2 = float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])
-                        bw = max(0.0, x2 - x1)
-                        bh = max(0.0, y2 - y1)
-                        box_area = bw * bh
-                        area_ratio = box_area / total_frame_area
+                        raw_boxes.append((x1, y1, x2, y2, conf, cls_id))
 
-                        if area_ratio > 0.05 or bw > 180 or bh > 180:
-                            severity = "severe"
-                        elif area_ratio > 0.015 or bw > 90 or bh > 90:
-                            severity = "moderate"
-                        else:
-                            severity = "minor"
+                # Post-NMS containment and deduplication suppression
+                cleaned_boxes = self._suppress_overlapping_boxes(raw_boxes, iou_thresh=iou_thresh)
 
-                        detections.append({
-                            "box": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
-                            "box_norm": [round(x1 / w, 4), round(y1 / h, 4), round(x2 / w, 4), round(y2 / h, 4)],
-                            "confidence": round(conf, 3),
-                            "class_id": cls_id,
-                            "class_name": "pothole",
-                            "severity": severity,
-                            "area_ratio": round(area_ratio, 4),
-                            "engine": "YOLOv8"
-                        })
+                for x1, y1, x2, y2, conf, cls_id in cleaned_boxes:
+                    bw = max(0.0, x2 - x1)
+                    bh = max(0.0, y2 - y1)
+                    box_area = bw * bh
+                    area_ratio = box_area / total_frame_area
+
+                    if area_ratio > 0.05 or bw > 180 or bh > 180:
+                        severity = "severe"
+                    elif area_ratio > 0.015 or bw > 90 or bh > 90:
+                        severity = "moderate"
+                    else:
+                        severity = "minor"
+
+                    detections.append({
+                        "box": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
+                        "box_norm": [round(x1 / w, 4), round(y1 / h, 4), round(x2 / w, 4), round(y2 / h, 4)],
+                        "confidence": round(conf, 3),
+                        "class_id": cls_id,
+                        "class_name": "pothole",
+                        "severity": severity,
+                        "area_ratio": round(area_ratio, 4),
+                        "engine": "YOLOv8"
+                    })
             except Exception as e:
-                print(f"[RideVision Detector] YOLO inference error: {e}")
-
-        # 2. Run OpenCV Fallback if OpenCV requested OR if hybrid yielded 0 detections
-        if engine == "opencv" or (engine == "hybrid" and len(detections) == 0):
-            cv_dets = self._detect_opencv_fallback(img_bgr, threshold)
-            detections.extend(cv_dets)
+                print(f"[RideVision Detector] YOLOv8 inference error: {e}")
 
         # Generate annotated frame
         annotated_bgr = self.annotate_frame(img_bgr, detections)
         return detections, annotated_bgr
-
-    def _detect_opencv_fallback(self, img_bgr: np.ndarray, threshold: float) -> List[Dict[str, Any]]:
-        """
-        OpenCV-based road surface defect contour heuristic.
-        Detects distinct dark, irregular asphalt cavities in the road region.
-        """
-        h, w = img_bgr.shape[:2]
-        total_frame_area = float(w * h)
-        detections = []
-
-        # Focus on bottom 70% of frame (road region in dashboard/mobile view)
-        road_y_start = int(h * 0.30)
-        road_roi = img_bgr[road_y_start:, :]
-
-        gray = cv2.cvtColor(road_roi, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (9, 9), 0)
-
-        # Threshold using relative asphalt darkness: potholes are darker than surrounding asphalt
-        mean_lum = float(np.mean(blurred))
-        dark_thresh_val = max(15.0, mean_lum - 16.0)
-        _, thresh = cv2.threshold(blurred, int(dark_thresh_val), 255, cv2.THRESH_BINARY_INV)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-        morph = cv2.morphologyEx(morph, cv2.MORPH_OPEN, kernel, iterations=2)
-
-        contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            # Filter noise and entire frame fills
-            if area < (total_frame_area * 0.005) or area > (total_frame_area * 0.40):
-                continue
-
-            x, y, bw, bh = cv2.boundingRect(cnt)
-            aspect_ratio = float(bw) / max(bh, 1)
-
-            # Potholes typically have roughly oval/horizontal aspects
-            if 0.4 <= aspect_ratio <= 4.0:
-                real_y = road_y_start + y
-                x1, y1, x2, y2 = float(x), float(real_y), float(x + bw), float(real_y + bh)
-                area_ratio = (bw * bh) / total_frame_area
-
-                confidence = min(0.95, 0.55 + (area_ratio * 4.0))
-                if confidence < threshold:
-                    continue
-
-                if area_ratio > 0.05 or bw > 140 or bh > 120:
-                    severity = "severe"
-                elif area_ratio > 0.015 or bw > 70:
-                    severity = "moderate"
-                else:
-                    severity = "minor"
-
-                detections.append({
-                    "box": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
-                    "box_norm": [round(x1 / w, 4), round(y1 / h, 4), round(x2 / w, 4), round(y2 / h, 4)],
-                    "confidence": round(confidence, 2),
-                    "class_id": 0,
-                    "class_name": "pothole",
-                    "severity": severity,
-                    "area_ratio": round(area_ratio, 4),
-                    "engine": "OpenCV-CV"
-                })
-
-        detections.sort(key=lambda d: d["confidence"], reverse=True)
-        return detections[:5]
 
     @staticmethod
     def annotate_frame(img_bgr: np.ndarray, detections: List[Dict[str, Any]]) -> np.ndarray:

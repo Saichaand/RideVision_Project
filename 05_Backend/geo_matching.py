@@ -19,6 +19,7 @@ from typing import Optional, List, Dict, Any
 from urllib.parse import quote
 import os
 import requests
+import xml.etree.ElementTree as ET
 
 EARTH_RADIUS_M = 6371000
 GEOCODING_API_KEY = os.getenv("GOOGLE_GEOCODING_API_KEY", "")
@@ -464,6 +465,157 @@ def get_route_osrm(
         "steps": [{"name": "Direct Commute Corridor", "distance_m": int(straight_dist_km * 1000)}],
         "source": "interpolated_corridor"
     }
+
+
+def parse_gpx_content(gpx_text_or_bytes: Any) -> Dict[str, Any]:
+    """
+    Parses a GPX (GPS Exchange Format) XML string or byte stream.
+    Extracts ordered track coordinates (lat, lon), elevation, timestamps, and calculates distance.
+    Supports <trkpt>, <rtept>, and <wpt> tags with or without XML namespaces.
+    """
+    if isinstance(gpx_text_or_bytes, bytes):
+        gpx_text = gpx_text_or_bytes.decode("utf-8", errors="ignore")
+    else:
+        gpx_text = str(gpx_text_or_bytes)
+
+    root = ET.fromstring(gpx_text)
+
+    def strip_ns(tag: str) -> str:
+        return tag.split("}")[-1] if "}" in tag else tag
+
+    track_name = "GPX Commute Route"
+    for elem in root.iter():
+        if strip_ns(elem.tag) == "name" and elem.text:
+            track_name = elem.text.strip()
+            break
+
+    coords: List[List[float]] = []
+    elevations: List[float] = []
+    timestamps: List[str] = []
+
+    for elem in root.iter():
+        tag = strip_ns(elem.tag)
+        if tag in ("trkpt", "rtept", "wpt"):
+            lat = elem.attrib.get("lat")
+            lon = elem.attrib.get("lon")
+            if lat is not None and lon is not None:
+                coords.append([float(lat), float(lon)])
+                for child in elem:
+                    c_tag = strip_ns(child.tag)
+                    if c_tag == "ele" and child.text:
+                        try:
+                            elevations.append(float(child.text))
+                        except ValueError:
+                            pass
+                    elif c_tag == "time" and child.text:
+                        timestamps.append(child.text.strip())
+
+    if not coords:
+        raise ValueError("No valid GPS trackpoints (<trkpt>, <rtept>, <wpt>) found in GPX file.")
+
+    # Calculate cumulative distance along path using Haversine formulation
+    total_dist_m = 0.0
+    for i in range(len(coords) - 1):
+        p1 = coords[i]
+        p2 = coords[i + 1]
+        total_dist_m += haversine_distance_m(p1[0], p1[1], p2[0], p2[1])
+
+    dist_km = round(total_dist_m / 1000.0, 2)
+    est_dur_min = round(max(1.0, (dist_km / 35.0) * 60.0), 1)
+
+    return {
+        "status": "success",
+        "name": track_name,
+        "coordinates": coords,
+        "distance_km": dist_km,
+        "duration_min": est_dur_min,
+        "total_points": len(coords),
+        "elevations": elevations,
+        "timestamps": timestamps,
+        "source": "gpx_track"
+    }
+
+
+def load_gpx_file(file_path: str) -> Dict[str, Any]:
+    """Reads a .gpx or .csv GPS log file from local disk and parses its coordinates."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if file_path.lower().endswith(".csv") or not ("<gpx" in content or "<?xml" in content):
+        return parse_csv_gps_log(content, track_name=os.path.basename(file_path))
+    return parse_gpx_content(content)
+
+
+def parse_csv_gps_log(csv_text_or_bytes: Any, track_name: str = "Recorded GPS Commute Log") -> Dict[str, Any]:
+    """
+    Parses CSV-formatted GPS logs (e.g. from mobile logger, GPS logger, OsmAnd, or custom tracker).
+    Extracts ordered coordinates (lat, lon), elevation, speed, bearing, and timestamps.
+    """
+    import csv
+    import io
+
+    if isinstance(csv_text_or_bytes, bytes):
+        text = csv_text_or_bytes.decode("utf-8", errors="ignore")
+    else:
+        text = str(csv_text_or_bytes)
+
+    reader = csv.DictReader(io.StringIO(text))
+    coords: List[List[float]] = []
+    elevations: List[float] = []
+    timestamps: List[str] = []
+    speeds: List[float] = []
+    bearings: List[float] = []
+
+    for row in reader:
+        lat_val = row.get("lat") or row.get("latitude") or row.get("Latitude")
+        lon_val = row.get("lon") or row.get("longitude") or row.get("Longitude")
+        if lat_val and lon_val:
+            try:
+                coords.append([float(lat_val), float(lon_val)])
+                if "elevation" in row and row["elevation"]:
+                    elevations.append(float(row["elevation"]))
+                if "time" in row and row["time"]:
+                    timestamps.append(row["time"].strip())
+                if "speed" in row and row["speed"]:
+                    speeds.append(float(row["speed"]))
+                if "bearing" in row and row["bearing"]:
+                    bearings.append(float(row["bearing"]))
+            except ValueError:
+                continue
+
+    if not coords:
+        raise ValueError("No valid GPS latitude/longitude rows found in CSV data.")
+
+    total_dist_m = 0.0
+    for i in range(len(coords) - 1):
+        p1 = coords[i]
+        p2 = coords[i + 1]
+        total_dist_m += haversine_distance_m(p1[0], p1[1], p2[0], p2[1])
+
+    dist_km = round(total_dist_m / 1000.0, 2)
+    est_dur_min = round(max(1.0, (dist_km / 35.0) * 60.0), 1)
+
+    return {
+        "status": "success",
+        "name": track_name,
+        "coordinates": coords,
+        "distance_km": dist_km,
+        "duration_min": est_dur_min,
+        "total_points": len(coords),
+        "elevations": elevations,
+        "timestamps": timestamps,
+        "speeds": speeds,
+        "bearings": bearings,
+        "source": "gps_csv_log"
+    }
+
+
+def parse_gps_track(content_or_bytes: Any, name: Optional[str] = None) -> Dict[str, Any]:
+    """Auto-detects track format (GPX XML vs CSV log) and parses into structured route data."""
+    sample = content_or_bytes[:100] if isinstance(content_or_bytes, bytes) else str(content_or_bytes)[:100]
+    if "<gpx" in sample or "<?xml" in sample:
+        return parse_gpx_content(content_or_bytes)
+    else:
+        return parse_csv_gps_log(content_or_bytes, track_name=name or "Recorded GPS Commute Log")
 
 
 def build_complaint_text(complaint: Dict[str, Any]) -> str:

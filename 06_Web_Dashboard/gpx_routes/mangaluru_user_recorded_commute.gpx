@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RideVision Mobile Logger" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Mangaluru: Kudupu to SJEC Vamanjoor Commute Log</name>
+    <desc>Real-world recorded GPS commute track across Kudupu, Vamanjoor and SJEC Gate corridor</desc>
+    <time>2026-09-17T03:09:18.525Z</time>
+  </metadata>
+  <trk>
+    <name>Mangaluru: Kudupu to SJEC Vamanjoor Commute Log</name>
+    <trkseg>
+      <trkpt lat="12.9212923" lon="74.8651359">
+        <ele>-16.6</ele>
+        <time>2026-09-17T03:09:18.525Z</time>
+      </trkpt>
+      <trkpt lat="12.9187606" lon="74.8680822">
+        <ele>-14.1</ele>
+        <time>2026-09-17T03:10:43.086Z</time>
+      </trkpt>
+      <trkpt lat="12.9160795" lon="74.8755951">
+        <ele>-54.0</ele>
+        <time>2026-09-17T03:12:25.000Z</time>
+      </trkpt>
+      <trkpt lat="12.9176948" lon="74.8804785">
+        <ele>-77.0</ele>
+        <time>2026-09-17T03:13:59.000Z</time>
+      </trkpt>
+      <trkpt lat="12.9152294" lon="74.8839134">
+        <ele>-6.0</ele>
+        <time>2026-09-17T03:15:13.016Z</time>
+      </trkpt>
+      <trkpt lat="12.9150299" lon="74.8874427">
+        <ele>-7.0</ele>
+        <time>2026-09-17T03:16:17.986Z</time>
+      </trkpt>
+      <trkpt lat="12.9146838" lon="74.8875795">
+        <ele>65.0</ele>
+        <time>2026-09-17T03:17:25.500Z</time>
+      </trkpt>
+      <trkpt lat="12.9142577" lon="74.8886940">
+        <ele>70.0</ele>
+        <time>2026-09-17T03:18:31.500Z</time>
+      </trkpt>
+      <trkpt lat="12.9141977" lon="74.8884412">
+        <ele>-21.0</ele>
+        <time>2026-09-17T03:19:37.500Z</time>
+      </trkpt>
+      <trkpt lat="12.9120148" lon="74.8917148">
+        <ele>17.0</ele>
+        <time>2026-09-17T03:20:49.000Z</time>
+      </trkpt>
+      <trkpt lat="12.9104978" lon="74.8965336">
+        <ele>23.0</ele>
+        <time>2026-09-17T03:21:54.074Z</time>
+      </trkpt>
+      <trkpt lat="12.9117471" lon="74.8990154">
+        <ele>46.0</ele>
+        <time>2026-09-17T03:23:05.928Z</time>
+      </trkpt>
+      <trkpt lat="12.9121512" lon="74.9002380">
+        <ele>18.0</ele>
+        <time>2026-09-17T03:24:10.996Z</time>
+      </trkpt>
+      <trkpt lat="12.9122396" lon="74.8998308">
+        <ele>24.0</ele>
+        <time>2026-09-17T03:25:16.002Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -90,7 +90,7 @@ RideVision_Project/
 ├── 05_Backend/                             # FastAPI Backend & Persistence
 │   ├── main.py                             # Core REST endpoints (detect, report, trip, warning)
 │   ├── database.py                         # SQLite schema, deduplication, Mangaluru/BLR seed data
-│   ├── detector.py                         # YOLOv8 deep learning + OpenCV CV fallback engine
+│   ├── detector.py                         # Dedicated YOLOv8 deep learning edge inference engine
 │   ├── geo_matching.py                     # Haversine distance, bearing cone, city geocoder
 │   ├── requirements.txt                    # FastAPI, Uvicorn, Ultralytics, Torch, OpenCV
 │   └── static/uploads/                     # Persisted hazard images
@@ -146,8 +146,7 @@ python tests/test_system.py
 ## 🌟 Key Features
 
 ### 1. 📸 Automated Computer Vision Detection
-- Loads the trained `best.pt` (YOLOv8 nano) model for single-class pothole detection.
-- Includes a traditional OpenCV contour & morphological defect analyzer as an evaluative comparison.
+- Loads the trained `best.pt` (YOLOv8 nano) model for single-class pothole detection with post-NMS deduplication.
 - Categorizes potholes into **Severe**, **Moderate**, or **Minor** based on bounding box dimension and frame area ratio.
 
 ### 2. 🚗 Proactive Driver Hazard Warning Ahead
