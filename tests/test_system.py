@@ -174,7 +174,9 @@ class TestRideVisionSystem(unittest.TestCase):
 
     def test_07_cv_detector_inference(self):
         """Test that the Computer Vision detector processes frames and returns structured bounding boxes."""
-        sample_path = os.path.join(PROJECT_ROOT, "06_Web_Dashboard", "samples", "sample_severe_pothole.jpg")
+        sample_path = os.path.join(PROJECT_ROOT, "06_Web_Dashboard", "samples", "sample_severe_pothole.png")
+        if not os.path.exists(sample_path):
+            sample_path = os.path.join(PROJECT_ROOT, "06_Web_Dashboard", "samples", "sample_severe_pothole.jpg")
         self.assertTrue(os.path.exists(sample_path))
 
         img = Image.open(sample_path)

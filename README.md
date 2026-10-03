@@ -95,8 +95,8 @@ RideVision_Project/
 │   ├── requirements.txt                    # FastAPI, Uvicorn, Ultralytics, Torch, OpenCV
 │   └── static/uploads/                     # Persisted hazard images
 │
-├── 06_Web_Dashboard/                       # Interactive Commuter & Municipal Portal
-│   ├── app.py                              # Streamlit multi-tab application
+├── 06_Web_Dashboard/                       # Developer & Engineering Console
+│   ├── app.py                              # Streamlit workbench (Inference, Drive Simulation, GIS Map, DB, REST, Viva)
 │   └── samples/                            # Sample road photos (severe, moderate, clean)
 │       └── generate_samples.py             # Road texture generator
 │
