@@ -381,6 +381,46 @@ with tab_model:
             ])
             st.dataframe(df_boxes, use_container_width=True)
 
+            # Authority Communication Channel Dispatch Card
+            st.markdown("#### 🚨 Municipal Authority Dispatch Preview")
+            top_severity = "severe" if any(d["severity"] == "severe" for d in detections) else "moderate"
+            sample_lat, sample_lon = 12.9152, 74.8988  # Mangaluru SJEC Corridor
+            detected_city = get_city_from_coords(sample_lat, sample_lon)
+            city_cfg = get_city_config(detected_city)
+            complaint_sample = {
+                "id": "LIVE-DET-01",
+                "lat": sample_lat,
+                "lon": sample_lon,
+                "city": detected_city,
+                "severity": top_severity,
+                "address": "Near SJEC Vamanjoor, Mangaluru",
+                "reported_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "note": f"Detected via YOLOv8 with {len(detections)} cavity bounding box(es)"
+            }
+            route_info = route_complaint(complaint_sample, city_cfg)
+
+            st.markdown(f"""
+            <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(14, 165, 233, 0.4); border-radius: 12px; padding: 16px; margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-weight: 700; color: #38BDF8; font-size: 1.05rem;">
+                        🏛️ {route_info['authority']}
+                    </div>
+                    <div style="background: #0284C7; color: #FFFFFF; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                        CHANNEL: {route_info['channel'].upper()}
+                    </div>
+                </div>
+                <div style="color: #94A3B8; font-size: 0.85rem; margin-top: 6px;">
+                    📍 <b>Jurisdiction:</b> {detected_city} | <b>Contact:</b> <code>{route_info['contact']}</code>
+                </div>
+                <div style="background: rgba(0, 0, 0, 0.4); border-radius: 8px; padding: 10px; margin-top: 10px; font-family: monospace; font-size: 0.8rem; color: #E2E8F0; white-space: pre-wrap;">{route_info['prefilled_message']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if route_info["channel"] == "whatsapp" and route_info.get("link"):
+                st.markdown(f'<div style="margin-top: 10px;"><a href="{route_info["link"]}" target="_blank" style="display: inline-block; background-color: #25D366; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 700;">🟢 Open Official WhatsApp Grievance Chat ↗</a></div>', unsafe_allow_html=True)
+            elif route_info["channel"] == "helpline" and route_info.get("link"):
+                st.markdown(f'<div style="margin-top: 10px;"><a href="{route_info["link"]}" style="display: inline-block; background-color: #0284C7; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 700;">📞 Call Authority Control Room ({route_info["contact"]})</a></div>', unsafe_allow_html=True)
+
         st.markdown("#### 5. Model Edge Deployment Specs")
         st.markdown("""
         - **Model Architecture:** YOLOv8 nano (`yolov8n.pt`) single-class pothole detector.
@@ -695,12 +735,41 @@ with tab_map:
         )
         st.pydeck_chart(view_deck)
 
-        # Quick Card Summary
+        # Quick Card Summary & Authority Channel Inspector
         st.markdown("#### 📍 Hazard Stretches Table")
         st.dataframe(
             df_p_map[["id", "city", "address", "severity", "status", "confirmations"]],
             use_container_width=True
         )
+
+        st.markdown("#### 🏛️ Hazard Jurisdictional Authority & Direct Channel")
+        p_inspect_id = st.selectbox("Inspect Authority Channel for Pothole:", [p["id"] for p in all_p_map], key="map_p_inspect")
+        selected_p = next((p for p in all_p_map if p["id"] == p_inspect_id), None)
+        if selected_p:
+            p_city = selected_p.get("city") or get_city_from_coords(selected_p["lat"], selected_p["lon"])
+            p_cfg = get_city_config(p_city)
+            p_routing = route_complaint(selected_p, p_cfg)
+
+            col_p_inf1, col_p_inf2 = st.columns([1.5, 1])
+            with col_p_inf1:
+                st.markdown(f"""
+                <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(14, 165, 233, 0.4); border-radius: 10px; padding: 14px;">
+                    <div style="color: #38BDF8; font-weight: 700; font-size: 1.05rem;">🏛️ {p_routing['authority']}</div>
+                    <div style="color: #94A3B8; font-size: 0.9rem; margin-top: 4px;">
+                        <b>City:</b> {p_city} | <b>Channel:</b> <code>{p_routing['channel'].upper()}</code> ({p_routing['contact']})
+                    </div>
+                    <div style="color: #CBD5E1; font-size: 0.85rem; margin-top: 6px;">
+                        <b>Address:</b> {selected_p.get('address') or 'Road coordinate'}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_p_inf2:
+                if p_routing["channel"] == "whatsapp" and p_routing.get("link"):
+                    st.markdown(f'<div style="margin-top: 10px;"><a href="{p_routing["link"]}" target="_blank" style="display: block; text-align: center; background-color: #25D366; color: white; padding: 12px 16px; border-radius: 8px; text-decoration: none; font-weight: 700;">🟢 Open Official WhatsApp Grievance Chat ↗</a></div>', unsafe_allow_html=True)
+                elif p_routing["channel"] == "helpline" and p_routing.get("link"):
+                    st.markdown(f'<div style="margin-top: 10px;"><a href="{p_routing["link"]}" style="display: block; text-align: center; background-color: #0284C7; color: white; padding: 12px 16px; border-radius: 8px; text-decoration: none; font-weight: 700;">📞 Call Authority Control Room ({p_routing["contact"]})</a></div>', unsafe_allow_html=True)
+                elif p_routing["channel"] == "email" and p_routing.get("link"):
+                    st.markdown(f'<div style="margin-top: 10px;"><a href="{p_routing["link"]}" style="display: block; text-align: center; background-color: #6366F1; color: white; padding: 12px 16px; border-radius: 8px; text-decoration: none; font-weight: 700;">✉️ Email Grievance Desk</a></div>', unsafe_allow_html=True)
     else:
         st.info("No road hazards found matching the selected filter.")
 
@@ -711,8 +780,9 @@ with tab_db:
     st.markdown("### 🏛️ Database & Civic Routing Management")
     st.write("Inspect SQLite persistence layer (`ridevision.db`), update hazard lifecycle statuses, and manage city grievance dispatch channels.")
 
-    db_view_tab1, db_view_tab2, db_view_tab3 = st.tabs([
+    db_view_tab1, db_view_tab2, db_view_tab3, db_view_tab4 = st.tabs([
         "📋 Potholes Master Table",
+        "🚨 Respective Authority Channel Finder & Dispatch",
         "📥 User Reports Audit",
         "⚙️ City Routing Config & Reset"
     ])
@@ -739,13 +809,126 @@ with tab_db:
                         st.rerun()
 
     with db_view_tab2:
+        st.markdown("#### 🚨 Respective Authority Communication Channel Finder")
+        st.write("Automatically resolves municipal jurisdiction from coordinates or database records, fetches the official communication channel (WhatsApp, 24x7 Helpline, Email), and generates formatted grievance dispatches.")
+
+        find_mode = st.radio("Choose Input Mode:", ["Select Existing Recorded Pothole", "Enter GPS Coordinates or Landmark Preset"], horizontal=True)
+
+        if find_mode == "Select Existing Recorded Pothole":
+            all_db_p = get_all_potholes()
+            if all_db_p:
+                pick_id = st.selectbox("Select Registered Pothole:", [f"{p['id']} — {p.get('address') or p['city']} ({p['severity'].upper()})" for p in all_db_p])
+                target_p_id = pick_id.split(" — ")[0]
+                target_p = next(p for p in all_db_p if p["id"] == target_p_id)
+
+                f_lat = target_p["lat"]
+                f_lon = target_p["lon"]
+                f_severity = target_p["severity"]
+                f_address = target_p.get("address") or f"Coordinates: {f_lat:.5f}, {f_lon:.5f}"
+                f_city = target_p.get("city") or get_city_from_coords(f_lat, f_lon)
+                f_note = f"Reported via RideVision AI. Verified with {target_p['confirmation_count']} confirmation(s)."
+            else:
+                st.warning("No potholes found in database.")
+                f_lat, f_lon, f_severity, f_address, f_city, f_note = 12.9152, 74.8988, "severe", "SJEC Vamanjoor", "Mangaluru", "Test"
+        else:
+            preset_choice = st.selectbox(
+                "Quick Coordinate Presets:",
+                [
+                    "Custom Input Coordinates",
+                    "Mangaluru — SJEC Vamanjoor (12.9152, 74.8988)",
+                    "Mangaluru — Hampankatta (12.8703, 74.8431)",
+                    "Bengaluru — Indiranagar 100ft Road (12.9719, 77.6412)",
+                    "Bengaluru — Silk Board Junction (12.9177, 77.6238)",
+                    "Udupi — City Bus Stand & Kalsanka (13.3409, 74.7421)",
+                    "Mysuru — Sayyaji Rao Road (12.3118, 76.6529)"
+                ]
+            )
+
+            if preset_choice == "Mangaluru — SJEC Vamanjoor (12.9152, 74.8988)":
+                def_lat, def_lon = 12.9152, 74.8988
+            elif preset_choice == "Mangaluru — Hampankatta (12.8703, 74.8431)":
+                def_lat, def_lon = 12.8703, 74.8431
+            elif preset_choice == "Bengaluru — Indiranagar 100ft Road (12.9719, 77.6412)":
+                def_lat, def_lon = 12.9719, 77.6412
+            elif preset_choice == "Bengaluru — Silk Board Junction (12.9177, 77.6238)":
+                def_lat, def_lon = 12.9177, 77.6238
+            elif preset_choice == "Udupi — City Bus Stand & Kalsanka (13.3409, 74.7421)":
+                def_lat, def_lon = 13.3409, 74.7421
+            elif preset_choice == "Mysuru — Sayyaji Rao Road (12.3118, 76.6529)":
+                def_lat, def_lon = 12.3118, 76.6529
+            else:
+                def_lat, def_lon = 12.9152, 74.8988
+
+            col_c1, col_c2, col_c3 = st.columns(3)
+            with col_c1:
+                f_lat = st.number_input("Latitude:", value=def_lat, format="%.6f")
+            with col_c2:
+                f_lon = st.number_input("Longitude:", value=def_lon, format="%.6f")
+            with col_c3:
+                f_severity = st.selectbox("Hazard Severity:", ["severe", "moderate", "minor"])
+
+            # Reverse Geocoding Lookup
+            rev_res = reverse_geocode(f_lat, f_lon)
+            f_city = get_city_from_coords(f_lat, f_lon)
+            f_address = rev_res.get("display_name") or f"Road near {f_city}"
+            f_note = st.text_input("Commuter / AI Diagnostic Note:", value=f"Detected via RideVision AI near {rev_res.get('road', 'roadway')}")
+
+        # Resolve Authority & Channel
+        target_city_cfg = get_city_config(f_city)
+        complaint_obj = {
+            "id": "CUSTOM-ROUTING-QUERY",
+            "lat": f_lat,
+            "lon": f_lon,
+            "city": f_city,
+            "severity": f_severity,
+            "address": f_address,
+            "reported_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "note": f_note
+        }
+        res_routing = route_complaint(complaint_obj, target_city_cfg)
+
+        st.markdown("---")
+        st.markdown("#### 🎯 Respective Municipal Authority & Action Channel")
+
+        col_rc1, col_rc2 = st.columns([1.2, 1])
+        with col_rc1:
+            st.markdown(f"""
+            <div style="background: rgba(15, 23, 42, 0.9); border: 2px solid #0284C7; border-radius: 12px; padding: 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 1.15rem; font-weight: 800; color: #38BDF8;">
+                        🏛️ {res_routing['authority']}
+                    </div>
+                    <div style="background: #0284C7; color: white; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;">
+                        {res_routing['channel'].upper()}
+                    </div>
+                </div>
+                <div style="color: #94A3B8; font-size: 0.9rem; margin-top: 8px;">
+                    📍 <b>City Jurisdiction:</b> {f_city}<br>
+                    📞 <b>Official Contact / Channel:</b> <code>{res_routing['contact']}</code><br>
+                    📋 <b>Instructions:</b> {res_routing['instructions']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if res_routing["channel"] == "whatsapp" and res_routing.get("link"):
+                st.markdown(f'<div style="margin-top: 12px;"><a href="{res_routing["link"]}" target="_blank" style="display: block; text-align: center; background-color: #25D366; color: white; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 1rem;">🟢 Launch Official WhatsApp Grievance Chat ↗</a></div>', unsafe_allow_html=True)
+            elif res_routing["channel"] == "helpline" and res_routing.get("link"):
+                st.markdown(f'<div style="margin-top: 12px;"><a href="{res_routing["link"]}" style="display: block; text-align: center; background-color: #0284C7; color: white; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 1rem;">📞 Call Authority Control Room ({res_routing["contact"]})</a></div>', unsafe_allow_html=True)
+            elif res_routing["channel"] == "email" and res_routing.get("link"):
+                st.markdown(f'<div style="margin-top: 12px;"><a href="{res_routing["link"]}" style="display: block; text-align: center; background-color: #6366F1; color: white; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 1rem;">✉️ Email Grievance Desk</a></div>', unsafe_allow_html=True)
+
+        with col_rc2:
+            st.markdown("##### 📄 Auto-Generated Structured Grievance Draft")
+            st.text_area("Prefilled Message Payload:", value=res_routing["prefilled_message"], height=190)
+
+    with db_view_tab3:
         reports_list = get_all_reports(limit=50)
         if reports_list:
             st.dataframe(pd.DataFrame(reports_list), use_container_width=True)
         else:
             st.info("No individual reports recorded yet.")
 
-    with db_view_tab3:
+    with db_view_tab4:
         st.markdown("#### Municipal Forwarding Configurations")
         cities = ["Mangaluru", "Bengaluru", "Udupi", "Mysuru"]
         for c in cities:
@@ -796,6 +979,7 @@ with tab_api:
         [
             "GET / (System Status & Health)",
             "GET /api/potholes?city=Mangaluru (Fetch City Hazards)",
+            "GET /api/municipal/route/pothole-mng-001 (Resolve Authority Channel for Hazard)",
             "POST /api/trip/check-ahead (Warning Ahead Evaluation)",
             "GET /api/analytics/stats (Civic Safety Metrics)"
         ]
@@ -808,6 +992,9 @@ with tab_api:
                 req = urllib.request.Request(target_endpoint)
             elif "city=Mangaluru" in test_endpoint:
                 target_endpoint = f"{api_url}/api/potholes?city=Mangaluru"
+                req = urllib.request.Request(target_endpoint)
+            elif "municipal/route" in test_endpoint:
+                target_endpoint = f"{api_url}/api/municipal/route/pothole-mng-001"
                 req = urllib.request.Request(target_endpoint)
             elif "/api/analytics/stats" in test_endpoint:
                 target_endpoint = f"{api_url}/api/analytics/stats"
